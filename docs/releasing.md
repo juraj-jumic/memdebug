@@ -31,8 +31,8 @@ proposes new versions of the upload and download actions) so a problem shows up 
 ## Each release
 
 1. Run `memdebug selftest` and the tests on your own machine (Windows is the one CI cannot fully stand in for).
-2. Update `__version__` in `src/memdebug/__init__.py` and `version` in `pyproject.toml` (they must match) and move the changelog entry from
-   "unreleased" to the release date.
+2. Update `__version__` in `src/memdebug/__init__.py` and `version` in `pyproject.toml` (they must match) and rename the changelog's `[Unreleased]` heading to the new
+   version with the release date, for example `## [0.2.1] - 2026-11-02`.
 3. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`. The workflow refuses to publish if the tag and the version differ.
 4. Approve the `pypi` environment if you required that. After a minute, in a clean virtual environment (not your working one), check the real
    install: `pip install memdebug==<version>`, then `memdebug --version` and `memdebug demo`. Do this on Windows as well as Linux or macOS.

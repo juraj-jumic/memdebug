@@ -452,6 +452,54 @@ def check_rollback_is_safe() -> str:
 
 
 
+def check_folder_rollback_is_safe() -> str:
+    """The plain-folder rollback, proven on this machine (no git needed): the plan writes nothing, the file comes back, what it replaced is
+    saved first byte for byte, a backup folder inside the notes is refused, and nothing outside the notes is touched."""
+    from .adapters.folder import FolderAdapter
+    from .adapters.folder_restore import FolderRestorer
+    from .errors import RestoreError
+
+    with _tmp() as base:
+        root = Path(base)
+        notes, outside = root / "notes", root / "outside.md"
+        notes.mkdir()
+        outside.write_bytes(b"not part of the notes\n")
+        original = b"alpha\r\nbeta\r\n"  # Windows line endings, which a snapshot's normalised text cannot hold
+        (notes / "a.md").write_bytes(original)
+        adapter = FolderAdapter(notes, store="selftest")
+        scope = {"store": "selftest"}
+        ledger = Ledger(root / "ledger.db")
+        live = adapter.list_memories(scope)
+        info = ledger.save_snapshot("folder", scope, live.memories, complete=live.complete, taken_at=datetime.now(timezone.utc))
+        precious = b"precious unsaved work\r\n\xff"
+        (notes / "a.md").write_bytes(precious)
+
+        backups = root / "backups"
+        snapshot = ledger.load_snapshot(info.id)
+        inside = FolderRestorer(adapter, notes / "backups").plan(snapshot)
+        if not inside.blockers:
+            raise RuntimeError("a backup folder inside the notes was not refused")
+        restorer = FolderRestorer(adapter, backups)
+        before = (notes / "a.md").read_bytes()
+        plan = restorer.plan(snapshot)
+        if (notes / "a.md").read_bytes() != before or backups.exists():
+            raise RuntimeError("planning changed something")
+        outcome = restorer.apply(snapshot, expected_plan_id=plan.plan_id)
+        if (notes / "a.md").read_bytes() != original:
+            raise RuntimeError("the file did not come back as it was")
+        if outcome.backup_path is None or (Path(outcome.backup_path) / "files" / "a.md").read_bytes() != precious:
+            raise RuntimeError("the replaced edit was not saved byte for byte")
+        if outside.read_bytes() != b"not part of the notes\n" or sorted(p.name for p in notes.iterdir()) != ["a.md"]:
+            raise RuntimeError("something outside the plan was changed")
+        try:
+            restorer.apply(snapshot, expected_plan_id="0" * 64)
+        except RestoreError:
+            pass
+        else:
+            raise RuntimeError("a plan that no longer matched was applied")
+    return "the plan wrote nothing, the file came back (CRLF kept), the replaced edit was saved byte for byte first, a backup folder inside the notes was refused, and nothing else changed"
+
+
 CHECKS: list[tuple[str, Callable[[], str]]] = [
     ("git ignores global config", check_git_ignores_global_config),
     ("hostile repository config cannot run programs", check_hostile_repo_config_cannot_run_programs),
@@ -465,6 +513,7 @@ CHECKS: list[tuple[str, Callable[[], str]]] = [
     ("ledger file permissions", check_ledger_file_permissions),
     ("viewer is local-only and protected", check_viewer_is_local_and_protected),
     ("rollback is safe", check_rollback_is_safe),
+    ("folder rollback is safe", check_folder_rollback_is_safe),
 ]
 
 

@@ -139,3 +139,12 @@ def test_without_git_the_demo_says_what_is_missing(monkeypatch):
     monkeypatch.setattr(demo, "find_git", lambda: None)
     result = runner.invoke(cli.app, ["demo"])
     assert result.exit_code == 2 and "git was not found" in result.output
+
+
+def test_the_demo_points_a_newcomer_at_the_guided_setup_not_an_advanced_command(tmp_path):
+    result = runner.invoke(cli.app, ["demo", "--dir", str(tmp_path / "d")])
+    assert result.exit_code == 0, result.output
+    last = "\n".join(result.output.strip().splitlines()[-3:])
+    assert "memdebug setup" in last and "memdebug agents" in last
+    assert "snapshot markdown" not in result.output
+    assert result.output.isascii()  # any console can show it

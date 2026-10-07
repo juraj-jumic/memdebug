@@ -14,6 +14,11 @@ def default_ledger_path() -> Path:
     return Path(base) / "memdebug" / "ledger.db"
 
 
+def backup_root_for(ledger_path: Path) -> Path:
+    """Where a plain-folder rollback keeps what it replaced: next to the ledger it is recorded in, never inside the notes."""
+    return ledger_path.with_name("backups")
+
+
 def default_config_path() -> Path:
     """The list of stores memdebug has been told to watch, next to the default ledger."""
     return default_ledger_path().with_name("stores.json")

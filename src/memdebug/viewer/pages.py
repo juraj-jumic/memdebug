@@ -17,6 +17,7 @@ from ..errors import SnapshotError
 from ..hints import new_hints
 from ..ledger import Ledger, VerifyResult
 from ..models import LedgerEntry, MemoryEvent, SnapshotInfo, Trust
+from ..stores import valid_name
 from .html import Markup, block, el, inline, raw_doctype
 from .redline import change_snippet, redline
 
@@ -79,6 +80,51 @@ def plural(count: int, one: str, many: str) -> str:
 
 def short(digest: str) -> str:
     return digest[:12]
+
+
+PUT_BACK_KINDS = ("folder", "markdown-git")  # the store types memdebug can write back; it only ever reads the others
+
+
+def earlier_snapshot(snapshots, backend: str, scope: dict, seq: int) -> SnapshotInfo | None:
+    """The latest snapshot of this store taken before ledger entry `seq`: the saved state a person would most likely want back."""
+    found = [i for i in snapshots if i.backend == backend and i.scope == scope and i.ledger_seq < seq]
+    return max(found, key=lambda i: (i.ledger_seq, int(i.id[1:])), default=None)
+
+
+def rollback_command(backend: str, scope: dict, snapshot_id: str) -> str | None:
+    """The command that puts a store back to a snapshot, or None when it cannot be given safely. The store's name comes from the ledger, which
+    anyone could edit, so it is only put into a command when it passes the same strict rule as a watched store's name: nothing a shell treats
+    specially, so pasting the command can never do anything else."""
+    name = scope.get("store")
+    if backend not in PUT_BACK_KINDS or not isinstance(name, str) or not valid_name(name):
+        return None
+    return f"memdebug rollback store {name} --to {snapshot_id}"
+
+
+def putback(backend: str, scope: dict, snapshot_id: str, *, heading: str = "Put it back", lead: str | None = None) -> Markup:
+    """How to put a store back to a snapshot. The viewer itself never changes anything: this is text to paste into a terminal, where memdebug
+    shows what would change first and asks before doing it."""
+    if backend not in PUT_BACK_KINDS:
+        return el("section", el("h2", heading), el(
+            "p", "memdebug only ever reads this kind of store, so it cannot put it back. Open Compare to see exactly what changed, and "
+                 "change it in the app itself.", class_="why"), class_="putback")
+    command = rollback_command(backend, scope, snapshot_id)
+    shown = f"{command}\n{command} --apply" if command else \
+        f"memdebug rollback store <name> --to {snapshot_id}\nmemdebug rollback store <name> --to {snapshot_id} --apply"
+    how = ("Files come back byte for byte from git, as one new commit; anything git did not hold is saved first."
+           if backend == "markdown-git" else
+           "A folder is rebuilt from the snapshot's text, so line endings may differ (LF, or CRLF if the file had CRLF throughout). Everything it "
+           "replaces is saved byte for byte in a private backup folder first.")
+    parts: list[Markup] = [
+        el("h2", heading),
+        el("p", lead or "This page cannot change anything. To put the store back to this snapshot, run this in a terminal. The first line only "
+                        "shows what would change; the second does it, after asking you to confirm.", class_="why"),
+        el("pre", block(shown)),
+        el("p", how + " The rollback is recorded here and can itself be undone.", class_="sub"),
+    ]
+    if not command:
+        parts.append(el("p", "Replace <name> with the store's name from 'memdebug stores'.", class_="sub"))
+    return el("section", *parts, class_="putback")
 
 
 def scope_text(scope: dict) -> str:
@@ -209,6 +255,20 @@ def _stores(entries: list[LedgerEntry]) -> bool:
 
 # -- overview ---------------------------------------------------------------------------------------------------
 
+def _putback_tip(shown: list[LedgerEntry], snaps: dict) -> list[Markup]:
+    """For the newest outside-history change in the list: the snapshot taken before it, and the command that would put the store back."""
+    newest = next((e for e in shown if e.event.op.value == "EXTERNAL"), None)
+    if newest is None:
+        return []
+    earlier = earlier_snapshot(snaps.values(), newest.event.backend, newest.event.scope, newest.seq)
+    command = None if earlier is None else rollback_command(newest.event.backend, newest.event.scope, earlier.id)
+    if earlier is None or command is None:
+        return []
+    return [el("p", "The last snapshot of that store before the newest outside change is ",
+               el("a", f"snapshot {earlier.id}", href=f"/snapshot/{earlier.id}"), ". To put the store back, run this in a terminal:", class_="sub"),
+            el("pre", block(command))]
+
+
 def overview(ledger: Ledger, ctx: Context) -> Page:
     counts = ledger.counts()
     external = counts["by_op"].get("EXTERNAL", 0)
@@ -252,6 +312,7 @@ def overview(ledger: Ledger, ctx: Context) -> Page:
             el("p", "These did not come through the store's own history, or came from an untrusted source. "
                     "Open one to see the exact words that changed.", class_="sub"),
             chain([event_row(e, url("/timeline", event=e.id), False, snaps, _stores(shown)) for e in shown]),
+            *_putback_tip(shown, snaps),
             class_="attention"))
 
     latest = ledger.events_page(limit=8)
@@ -281,7 +342,12 @@ def rollback_section(event: MemoryEvent) -> list[Markup]:
     def link(sid, text):
         return el("a", text, href=f"/snapshot/{sid}")
 
+    folder = event.backend == "folder"
     parts: list[Markup] = [
+        el("p", "The notes folder was put back to ", link(details["target"], f"snapshot {details['target']}"),
+           ". The files were changed in place (there is no git history here, so no commit), and everything replaced or removed was "
+           "saved first in a private backup folder. A folder is rebuilt from the snapshot's text, which does not keep line endings exactly.",
+           class_="why") if folder else
         el("p", "The memory store was put back to ", link(details["target"], f"snapshot {details['target']}"),
            ". Nothing was rewritten: any change to the files is a new commit, and anything git did not already hold was "
            "saved first.", class_="why"),
@@ -304,14 +370,16 @@ def rollback_section(event: MemoryEvent) -> list[Markup]:
         facts.append(("New commit", details["commit"][:12]))
     if details["previous_head"]:
         facts.append(("Branch was at", details["previous_head"][:12]))
-    if details["backup"]:
+    if details["backup"] and folder:
+        facts.append(("Saved first in", f"the folder {details['backup'].rsplit('/', 1)[-1]}, inside the 'backups' folder next to your ledger"))
+    elif details["backup"]:
         facts.append(("Saved first in", details["backup"]))
     parts.append(el("dl", *[Markup(str(el("dt", k)) + str(el("dd", v if isinstance(v, Markup) else inline(v, 120))))
                             for k, v in facts], class_="facts"))
     return parts
 
 
-def inspector(entry: LedgerEntry) -> Markup:
+def inspector(entry: LedgerEntry, snapshots: dict | None = None) -> Markup:
     event = entry.event
     op = event.op.value
     source = event.source
@@ -346,6 +414,11 @@ def inspector(entry: LedgerEntry) -> Markup:
     if op == "EXTERNAL":
         main.append(el("p", "Nothing in the store's own history explains this change. If you did not make it, "
                             "treat the new text as untrusted.", class_="why"))
+        earlier = earlier_snapshot((snapshots or {}).values(), event.backend, event.scope, entry.seq)
+        if earlier is not None:
+            main.append(putback(event.backend, event.scope, earlier.id, heading=f"Put the store back to snapshot {earlier.id}",
+                                lead=f"Snapshot {earlier.id}, taken before this change, is the most recent saved state of this store. This page "
+                                     "cannot change anything; to put the store back to it, run this in a terminal."))
     elif event.trust == Trust.UNTRUSTED:
         main.append(el("p", trust_note, class_="why"))
 
@@ -409,7 +482,7 @@ def timeline(ledger: Ledger, ctx: Context, *, op: str | None, trust: str | None,
         pager.append(el("a", "Newest", href=url("/timeline", op=op, trust=trust)))
     if goes_on:
         pager.append(el("a", "Older", href=url("/timeline", op=op, trust=trust, before=entries[-1].seq)))
-    side = inspector(selected) if selected else el(
+    side = inspector(selected, snaps) if selected else el(
         "div", el("p", "Select an entry to see what changed, where it came from and its place in the ledger."),
         class_="sheet")
     if event_id and selected is None:
@@ -477,6 +550,7 @@ def snapshot_detail(ledger: Ledger, ctx: Context, snapshot_id: str, page: int) -
         str(el("p", inline(info.label or "", 100), class_="sub") if info.label else Markup("")),
         str(notice("This snapshot may be incomplete: the listing could have been cut short.") if not info.complete else Markup("")),
         str(el("dl", *[Markup(str(el("dt", k)) + str(el("dd", inline(v, 200)))) for k, v in facts], class_="facts")),
+        str(putback(info.backend, info.scope, info.id)),
         str(el("h2", "Memories")),
         str(el("div", el("table", el("thead", el("tr", el("th", "Id", scope="col"), el("th", "Text", scope="col"))),
                          el("tbody", *rows) if rows else el("tbody", el("tr", el("td", "Empty.", colspan="2")))),
@@ -513,6 +587,9 @@ def diff_page(ledger: Ledger, ctx: Context, old_id: str | None, new_id: str | No
             parts.append(notice(str(exc), "bad"))
         else:
             parts += diff_body(result, full)
+            parts.append(putback(result.old.backend, result.old.scope, result.old.id, heading=f"Put it back to {result.old.id}",
+                                 lead=f"To undo these changes and put the store back to {result.old.id}, run this in a terminal. The page "
+                                      "cannot change anything; the first line only shows what would change."))
     return Page(200, document(ctx, "Compare", "compare", Markup("".join(str(p) for p in parts))))
 
 

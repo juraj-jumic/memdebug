@@ -83,6 +83,7 @@ a control, that the attack works against ordinary git, and reports SKIP rather t
 | Other users or programs on the machine | 192-bit secret, HttpOnly SameSite=Strict cookie, constant-time comparison; nothing is served without it |
 | Another program taking the port | The port is taken exclusively (matters on Windows); `selftest` checks it |
 | Changing anything | Only GET and HEAD; the ledger is opened read-only. The theme switch sets one cookie and nothing else |
+| A command shown for copying that a hostile ledger turned into something else | The "put it back" guidance is only text, never a link or a button. A store name from the ledger goes into a command only if it passes the same strict rule as a watched store's name (lowercase letters, digits, dot, dash, underscore); anything else gets a `<name>` placeholder, so pasting a command can never do more than the command says. Stores memdebug cannot write to never get one. For an outside change it names only a snapshot taken before it |
 | Odd, oversized or slow requests | Strict limits on request line, path, query, headers, connections and time; only fixed routes and validated ids; nothing from the request is echoed |
 
 ## Rollback (markdown/git)
@@ -100,6 +101,26 @@ Rollback is the only part of memdebug that changes your files, so it is the most
 | Unsafe repository states | Refused: detached HEAD, staged changes, merge/rebase/cherry-pick in progress, git lock files |
 | A failure half-way | Every step is journaled; on any failure (or Ctrl+C) files, index and branch are put back and you are told |
 | An unrecorded rollback | The ledger record is validated before any file is touched; the state is snapshotted before and after; a `ROLLBACK` entry is chained into the ledger; undoing is rolling back to the "before" snapshot |
+
+
+## Rollback of a plain folder
+
+Rollback of a watched store by name (`memdebug rollback store`) uses the same file-writing code as the git engine (`adapters/fileops.py`), so links,
+junctions, case clashes, atomic writes and the undo journal are identical. What differs, because a folder has no git history:
+
+| Threat | Protection |
+| --- | --- |
+| Restoring text a snapshot could not keep faithfully | The snapshot's text is the only source. Text that was cut, marked too large or had undecodable bytes is refused and named in the plan, never written. Line endings are LF, or CRLF if the file being replaced uses CRLF throughout; mixed endings become LF. |
+| Losing what the rollback replaces | Every file that would be overwritten or removed is first copied byte for byte into a private folder next to the ledger (0700/0600 on POSIX), the copy is read back and checked, and nothing in the notes is touched if that fails. |
+| Backups landing inside the notes (and being read as memories), or the notes inside the backups | The plan refuses (a blocker) when either folder contains the other, and applying refuses again. |
+| A "good" snapshot that is really an attack | `memdebug snapshot store` refuses while the ledger holds an outside-history change or flagged wording since the store's last snapshot. It reads the ledger, so looking again does not clear it; only a deliberate `--include-changes` does. |
+| The folder changing between the plan and the write | Applying re-plans and refuses if the plan differs; every target is re-checked before the first backup or write. |
+| A snapshot (or a tampered ledger) naming unsafe files | Names are validated by the same rule as the reader (no `..`, absolute, device or case-clashing names), and files outside the store's subfolder, or outside a named-files store, are never written. |
+
+Known limits: backups hold your memory text and are never deleted by memdebug; a plain-folder rollback cannot restore exact bytes for files whose
+line endings were mixed; a store with no history cannot show an outside-history bypass, only the changes observed between looks. The Windows
+permissions of the backup folder are those of your user profile (memdebug sets no ACL), and the junction guard is exercised on every platform by
+simulation, but real junctions are only tested on Windows runs of the suite.
 
 ## Stores, settings and discovery
 
@@ -147,7 +168,7 @@ Read these. They are why this is alpha software.
   installation. It cannot do more than you could already do with `docker exec`, but it does require that access.
 * **Stores without a history cannot show a bypass.** For a plain folder or Open WebUI memdebug sees only the state at each look, so a change
   made and reverted between looks is invisible, and an attacker's edit looks like any other. Prefer a git repository when you can.
-* **Rollback for plain folders, Open WebUI and Mem0 does not exist yet.**
+* **Rollback for Open WebUI and Mem0 does not exist** (memdebug only reads those). Plain folders and git notes can be rolled back.
 * **Rollback restores files, not the world.** It does not change what a *running* agent has already loaded (restart the
   session), does not rebuild anything derived from the memory (summaries, embeddings), cannot undo what the agent did
   because of a bad memory, and a still-running agent can write the same text back. Stop the agent first.

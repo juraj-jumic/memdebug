@@ -9,14 +9,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Protocol, Sequence
 
-from .adapters.restore import Outcome, Plan, Restorer
+from .adapters.restore import Outcome, Plan
 from .errors import MemdebugError
 from .ledger import MAX_ROLLBACK_FILES, Ledger, validate_rollback_details
 from .models import LedgerEntry, Snapshot, SnapshotInfo
 from .sync import sync
 from .textsafe import safe_text
+
+
+class Restoring(Protocol):
+    """What the flow needs from a restorer: the git engine (Restorer) and the plain-folder engine (FolderRestorer) both fit."""
+
+    def plan(self, snapshot: Snapshot, *, only: Sequence[str] = ..., remove_added: bool = ...) -> Plan: ...
+
+    def apply(self, snapshot: Snapshot, *, expected_plan_id: str, only: Sequence[str] = ...,
+              remove_added: bool = ...) -> Outcome: ...
 
 
 @dataclass
@@ -37,7 +46,7 @@ def rollback_details(snapshot: Snapshot, plan: Plan, before_id: str | None, afte
             "files": [{"path": i.path, "action": i.action, "source": i.source} for i in items[:MAX_ROLLBACK_FILES]]}
 
 
-def run_rollback(adapter, ledger: Ledger, scope: dict[str, str], restorer: Restorer, snapshot: Snapshot, plan: Plan, *,
+def run_rollback(adapter, ledger: Ledger, scope: dict[str, str], restorer: Restoring, snapshot: Snapshot, plan: Plan, *,
                  only: list[str] | None = None, remove_added: bool = False, settle: float = 1.0,
                  warn: Callable[[str], None] = lambda text: None) -> RollbackResult:
     """Carry out a confirmed plan. Raises MemdebugError if it could not be started or the files could not be restored."""

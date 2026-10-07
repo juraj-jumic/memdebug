@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from memdebug.adapters import restore as rs
+from memdebug.adapters import fileops as fo  # the shared link check lives here now
 from memdebug.adapters.markdown_git import MarkdownGitAdapter
 from memdebug.adapters.restore import Restorer, snapshot_text_problem
 from memdebug.errors import RestoreError
@@ -409,7 +409,7 @@ def test_a_folder_that_windows_would_call_a_reparse_point_is_treated_as_a_link(w
     put(world.repo, "sub/a.md", "changed\n")
     commit_all(world.repo)
     before = world.state()
-    monkeypatch.setattr(rs, "_is_reparse_point", lambda info: stat.S_ISDIR(info.st_mode))
+    monkeypatch.setattr(fo, "_is_reparse_point", lambda info: stat.S_ISDIR(info.st_mode))
     plan = world.plan(snap)
     assert plan.items == [] and "sub/a.md" in dict(plan.skipped)
     world.apply(snap)
@@ -424,7 +424,7 @@ def test_a_folder_that_turns_into_a_link_while_it_is_being_created_stops_and_und
     git(world.repo, "commit", "-q", "-m", "drop")
     shutil.rmtree(world.repo / "new", ignore_errors=True)
     before = world.state(ignore_backups=True)
-    monkeypatch.setattr(rs, "_is_reparse_point", lambda info: stat.S_ISDIR(info.st_mode))
+    monkeypatch.setattr(fo, "_is_reparse_point", lambda info: stat.S_ISDIR(info.st_mode))
     with pytest.raises(RestoreError, match="a folder on the way is a link"):  # the write step's own guard, not just the final check
         world.apply(snap)
     monkeypatch.undo()

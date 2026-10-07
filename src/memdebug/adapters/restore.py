@@ -26,7 +26,6 @@ import os
 import re
 import secrets
 import shutil
-import stat
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -35,13 +34,12 @@ from typing import Sequence
 from ..errors import RestoreError
 from ..models import Snapshot
 from ..textsafe import safe_text
+from .fileops import _O_BINARY, _O_NOFOLLOW, FileOps, _is_link  # noqa: F401  (re-exported: other code and tests use these names)
 from .markdown_git import (
     _RAW_RE,
     _SHA_RE,
-    MAX_FILE_BYTES,
     MarkdownGitAdapter,
     _BlobReader,
-    _is_reparse_point,
     _text_from_bytes,
     _valid_relpath,
 )
@@ -59,8 +57,6 @@ _TOO_LARGE = "[file too large to read:"
 _IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD", "rebase-merge", "rebase-apply",
                 "sequencer", "BISECT_LOG", "index.lock", "HEAD.lock", "shallow.lock")
 _REGULAR = ("100644", "100755")
-_O_BINARY = getattr(os, "O_BINARY", 0)
-_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
 @dataclass
@@ -108,6 +104,7 @@ class Outcome:
     commit: str | None
     backup_ref: str | None
     items: list[Item]
+    backup_path: str | None = None   # where the backup is, when it is a folder on disk (plain-folder stores) rather than a git ref
 
 
 def _digest(data: bytes | None) -> str | None:
@@ -118,10 +115,6 @@ def _plan_id(plan: Plan) -> str:
     body = {"snapshot": plan.snapshot_id, "store": plan.store, "head": plan.head, "branch": plan.branch,
             "items": [[i.path, i.action, i.source, _digest(i.target_bytes), _digest(i.live_bytes)] for i in plan.items]}
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
-
-
-def _is_link(info: os.stat_result) -> bool:
-    return stat.S_ISLNK(info.st_mode) or _is_reparse_point(info)
 
 
 def snapshot_text_problem(text: str) -> str | None:
@@ -135,7 +128,7 @@ def snapshot_text_problem(text: str) -> str | None:
     return None
 
 
-class Restorer:
+class Restorer(FileOps):
     def __init__(self, adapter: MarkdownGitAdapter):
         self._adapter = adapter
         self._git = adapter.git
@@ -199,47 +192,6 @@ class Restorer:
             plan.blockers.append("there are staged changes; commit or unstage them first")
         elif code != 0:
             plan.blockers.append("git could not compare the index with HEAD")
-
-    def _inspect(self, relpath: str) -> tuple[str, bytes | None]:
-        """Read a working-tree file without following links: ("ok", bytes), ("missing", None), ("large", None) or
-        ("unsafe", None)."""
-        current = str(self._root)
-        parts = relpath.split("/")
-        for part in parts[:-1]:
-            current = os.path.join(current, part)
-            try:
-                info = os.lstat(current)
-            except FileNotFoundError:
-                return "missing", None
-            except OSError:
-                return "unsafe", None
-            if _is_link(info) or not stat.S_ISDIR(info.st_mode):
-                return "unsafe", None
-        full = os.path.join(current, parts[-1])
-        try:
-            info = os.lstat(full)
-        except FileNotFoundError:
-            return "missing", None
-        except OSError:
-            return "unsafe", None
-        if _is_link(info) or not stat.S_ISREG(info.st_mode):
-            return "unsafe", None
-        if info.st_size > MAX_FILE_BYTES:
-            return "large", None
-        try:
-            fd = os.open(full, os.O_RDONLY | _O_BINARY | _O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0))
-        except OSError:
-            return "unsafe", None
-        try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
-                return "unsafe", None
-            with os.fdopen(fd, "rb", closefd=False) as handle:
-                data = handle.read(MAX_FILE_BYTES + 1)
-        except OSError:
-            return "unsafe", None
-        finally:
-            os.close(fd)
-        return ("large", None) if len(data) > MAX_FILE_BYTES else ("ok", data)
 
     def _head_entries(self, paths: list[str]) -> dict[str, tuple[str, str]]:
         """Mode and object id of each path as HEAD has it (("other", "") for anything that is not a plain file)."""
@@ -572,100 +524,9 @@ class Restorer:
 
     # -- working tree -----------------------------------------------------------------------------------------------
 
-    def _check_target(self, rel: str, must_exist: bool = False) -> None:
-        current = str(self._root)
-        parts = rel.split("/")
-        for part in parts[:-1]:
-            current = os.path.join(current, part)
-            try:
-                info = os.lstat(current)
-            except FileNotFoundError:
-                if must_exist:
-                    raise RestoreError(f"{safe_text(rel, 60)}: a folder disappeared") from None
-                break
-            if _is_link(info) or not stat.S_ISDIR(info.st_mode):
-                raise RestoreError(f"{safe_text(rel, 60)}: a folder on the way is a link or not a folder")
-        else:
-            try:
-                names = os.listdir(current)
-            except OSError as exc:
-                raise RestoreError(f"{safe_text(rel, 60)}: cannot read its folder ({exc.strerror})") from exc
-            name = parts[-1]
-            if name not in names and any(other.casefold() == name.casefold() for other in names):
-                raise RestoreError(f"{safe_text(rel, 60)}: another file in that folder differs only by letter case")
-            target = os.path.join(current, name)
-            try:
-                info = os.lstat(target)
-            except FileNotFoundError:
-                if must_exist:
-                    raise RestoreError(f"{safe_text(rel, 60)}: the file disappeared") from None
-                return
-            if _is_link(info) or not stat.S_ISREG(info.st_mode):
-                raise RestoreError(f"{safe_text(rel, 60)}: not a plain file")
-
-    def _write_file(self, rel: str, data: bytes) -> list[str]:
-        """Replace or create a file through a temporary file and an atomic rename. Returns the folders it created."""
-        created: list[str] = []
-        try:
-            current = str(self._root)
-            parts = rel.split("/")
-            for part in parts[:-1]:
-                current = os.path.join(current, part)
-                try:
-                    info = os.lstat(current)
-                except FileNotFoundError:
-                    os.mkdir(current)
-                    created.append(current)
-                    info = os.lstat(current)
-                if _is_link(info) or not stat.S_ISDIR(info.st_mode):
-                    raise RestoreError(f"{safe_text(rel, 60)}: a folder on the way is a link or not a folder")
-            target = os.path.join(current, parts[-1])
-            mode = None
-            try:
-                info = os.lstat(target)
-                if _is_link(info) or not stat.S_ISREG(info.st_mode):
-                    raise RestoreError(f"{safe_text(rel, 60)}: not a plain file")
-                mode = stat.S_IMODE(info.st_mode)
-            except FileNotFoundError:
-                pass
-            temporary = os.path.join(current, f".memdebug-{secrets.token_hex(8)}.tmp")
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_BINARY | _O_NOFOLLOW, 0o666)
-            try:
-                with os.fdopen(fd, "wb") as handle:
-                    handle.write(data)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                if mode is not None and os.name == "posix":
-                    os.chmod(temporary, mode)
-                os.replace(temporary, target)
-            except BaseException:
-                try:
-                    os.unlink(temporary)
-                except OSError:
-                    pass
-                raise
-            return created
-        except BaseException:
-            for folder in reversed(created):
-                try:
-                    os.rmdir(folder)
-                except OSError:
-                    pass
-            raise
-
-    def _remove_file(self, rel: str) -> None:
-        self._check_target(rel, must_exist=True)
-        os.unlink(os.path.join(str(self._root), *rel.split("/")))
-
     def _verify(self, plan: Plan, commit: str | None) -> None:
         """The store must now hold exactly what the plan said, and git must agree with the working tree."""
-        for item in plan.items:
-            status, data = self._inspect(item.path)
-            if item.action == "remove":
-                if status != "missing":
-                    raise RestoreError(f"{safe_text(item.path, 60)} is still there after removal")
-            elif status != "ok" or _text_from_bytes(data or b"") != item.target_text:
-                raise RestoreError(f"{safe_text(item.path, 60)} does not hold the restored text after writing")
+        self._verify_files(plan.items)
         if commit is not None:
             code, out, _ = self._run(["rev-parse", "--verify", "-q", "HEAD"])
             if code != 0 or out.decode().strip() != commit:
@@ -676,22 +537,7 @@ class Restorer:
 
     def _undo(self, plan: Plan, journal, created_dirs, moved, undo_entries, commit) -> list[str]:
         """Put everything back, newest step first. Returns what could not be undone."""
-        problems: list[str] = []
-        for path, old in reversed(journal):
-            try:
-                if old is None:
-                    full = os.path.join(str(self._root), *path.split("/"))
-                    if os.path.lexists(full):
-                        os.unlink(full)
-                else:
-                    self._write_file(path, old)
-            except Exception as exc:
-                problems.append(f"{safe_text(path, 60)}: {safe_text(exc, 80)}")
-        for folder in reversed(created_dirs):
-            try:
-                os.rmdir(folder)
-            except OSError:
-                pass
+        problems = self._undo_files(journal, created_dirs)
         if moved["index"]:
             try:
                 self._must(["update-index", "-z", "--index-info"], "restore the index", stdin=self._index_info(plan, undo_entries))

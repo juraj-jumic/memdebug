@@ -20,7 +20,7 @@ only. It does not list or open anything else in the folder.
 ChatGPT, Claude's apps (claude.ai on the web, desktop and phone), Gemini and Copilot keep their memory in the provider's cloud.
 There is nothing on this computer to point memdebug at, and memdebug cannot tell whether those apps are installed, so it never
 claims to have found them. Review or clear that memory in each app's settings. To keep a record of how it changes, copy it
-into a markdown file now and then, in a folder you add to memdebug (`memdebug add <folder>`).
+into a markdown file now and then, in a folder you add to memdebug (`memdebug add <folder>`). A watched folder can be rolled back to a snapshot with `memdebug rollback store NAME --to s1`.
 
 ## Adding an agent
 

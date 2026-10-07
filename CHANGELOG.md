@@ -3,6 +3,27 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Added
+- **Rollback for plain folders.** `memdebug rollback store NAME --to s1` restores a watched folder of notes (and, by the same command, git notes) to a
+  snapshot: a dry run first, everything it replaces saved first byte for byte in a private folder next to the ledger, every write undone if a later
+  step fails, and the rollback recorded in the ledger and itself undoable. A folder is rebuilt from the snapshot's text, so line endings are LF (or CRLF
+  if the file it replaces uses CRLF throughout), and text a snapshot could not keep faithfully is skipped, never written.
+- `memdebug selftest` has a new check, "folder rollback is safe", that proves the plain-folder rollback claims on your machine without needing git.
+- `memdebug snapshot store NAME` saves a known-good copy of a watched store to roll back to. It refuses while the ledger holds an outside-history
+  change or flagged wording since the store's last snapshot, until you add `--include-changes`.
+
+### Changed
+- **The viewer** shows how to put a store back: snapshot pages, the compare page, the page of a change made outside a store's history and the
+  overview's "Needs a look" give the `memdebug rollback store` command as text to copy (the viewer itself still only reads). A store name from the
+  ledger is only put into a command if it is safe to paste; for an outside change the snapshot offered is always one taken before it. A rollback of a
+  plain folder is described as in place with a backup, not as a commit.
+- The file-writing safety code of the git rollback engine (links, junctions, case clashes, atomic writes, undo) now lives in one shared module used by
+  both engines. No behaviour change.
+- `memdebug demo` now ends by pointing at `memdebug setup`, the guided way to watch your own agents, instead of an advanced command.
+- Documentation: the README explains installing from PyPI, with a route that works on Windows without pipx.
+
 ## [0.2.0] - 2026-10-07
 
 ### Added

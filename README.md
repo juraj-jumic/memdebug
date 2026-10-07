@@ -60,7 +60,7 @@ Or register stores yourself (this is what a script would do):
 | Store | What it is | Change history | "Changed outside the history" | Rollback |
 | --- | --- | --- | --- | --- |
 | markdown (git) | markdown notes in a git repository | git history | an uncommitted edit | yes |
-| folder | markdown notes in a plain folder (for example Claude Code's per-project memory folder) | none: changes are noticed between looks | not applicable | not yet |
+| folder | markdown notes in a plain folder (for example Claude Code's per-project memory folder) | none: changes are noticed between looks | not applicable | yes, from a snapshot (see below) |
 | openwebui | the `memory` table of Open WebUI's `webui.db`, copied from its Docker container (or from a copy you made) | none | not applicable | no |
 | mem0 | self-hosted Mem0 | Mem0's `history.db` | a change made directly in storage | no |
 
@@ -73,7 +73,9 @@ provider's cloud: there is nothing local to watch, and memdebug says so rather t
 
 ## Tools for people who want more
 
-    memdebug timeline | verify | diff s1 s2 --full | snapshot ... | rollback markdown --path REPO --to s1   # a dry run; add --apply
+    memdebug snapshot store NAME [--label TEXT]        # save a known-good copy of a watched store, to roll back to later
+    memdebug rollback store NAME --to s1               # a dry run; add --apply. Works for folders and git notes
+    memdebug timeline | verify | diff s1 s2 --full | snapshot ... | rollback markdown --path REPO --to s1
     memdebug report --format markdown|json|sarif [--out FILE] [--fail-on findings|hints]    # for people, programs and CI
     memdebug witness --file E:\memdebug-witness.txt      # a second copy of the ledger's fingerprint, kept somewhere else
     memdebug verify --witness E:\memdebug-witness.txt    # catches a rewritten or cut-short ledger
@@ -110,6 +112,12 @@ the secret moves into a cookie and disappears from the address bar. It uses only
 library and sends no JavaScript at all. Run `memdebug verify` once first if the ledger is from an
 older version (the viewer itself never upgrades or creates anything).
 
+The viewer can only look, so where you may want to act it shows you the command instead, as text to paste into a terminal: a snapshot page, the
+compare page, the page of a change made outside a store's history, and the overview's "Needs a look" all say how to put a watched store back
+(`memdebug rollback store NAME --to sN`), and for an outside change they point at the last snapshot taken *before* it, never one that already includes
+it. Stores memdebug only reads (Open WebUI, Mem0) say so instead of offering a command. A rollback of a plain folder is described as it really is:
+changed in place, with the replaced files saved in a backup folder, not as a git commit.
+
 Security of the viewer, threat by threat: [docs/threat-model.md](docs/threat-model.md#the-viewer). Its limits: it is plain HTTP on your own
 machine, the first link (with the secret) stays in your browser history, and processes running as you can read the secret.
 Choose Auto, Light or Dark at the top right.
@@ -144,7 +152,38 @@ installed. Adding a store type is described in [CONTRIBUTING.md](CONTRIBUTING.md
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the ground rules (everything read from a store is untrusted; adapters only read).
 
-## Rolling back (markdown/git)
+## Rolling back a watched store (folders and git notes)
+
+`memdebug rollback store NAME --to s1` does the same job by the name you see in `memdebug stores`, for a plain folder of notes as well as for
+git notes. First save a known-good copy while the store is healthy:
+
+```
+memdebug snapshot store claude-code-shop --label "good, after the move"     # a snapshot you can come back to
+memdebug snapshot list                                                       # names and dates of snapshots
+memdebug rollback store claude-code-shop --to s2                             # shows what would change; writes nothing
+memdebug rollback store claude-code-shop --to s2 --apply                     # does it, after you type the snapshot id
+```
+
+`snapshot store` refuses to save while the ledger holds a change made outside the store's own history, or wording flagged as worth a second look,
+since the store's last snapshot: a snapshot is what a rollback later treats as good. Look at the flagged changes first (`memdebug serve`), then add
+`--include-changes` if they are fine. This does not go away if you run it twice.
+
+For a **plain folder** there is no git to take exact file versions from, so it works from the snapshot's text, and it is honest about what that means:
+
+* **Backups are files.** Anything the rollback would replace or remove is first copied, byte for byte, into a private folder next to your ledger
+  (`backups\<store>\<date>-<id>`, with a `manifest.json`), and each copy is read back and checked before your notes are touched. Get a file
+  back by copying it out of that folder's `files` folder. These copies contain your memory text and memdebug never deletes them: delete old ones
+  yourself when you no longer need them.
+* **Line endings.** A snapshot does not keep them. Files come back as UTF-8 with LF line endings, or with CRLF if the file being replaced uses CRLF
+  throughout. A file with mixed endings comes back with LF.
+* **Nothing it cannot restore faithfully is written.** Text that was cut, marked too large, or had bytes that are not valid text is skipped, and
+  the dry run says which files and why.
+* **Everything else is the same** as for git notes: the plan writes nothing, applying refuses if anything changed since you saw the plan, links,
+  junctions and unsafe names are refused, every write is undone if a later step fails, and the rollback is recorded and can itself be undone.
+
+Open WebUI and Mem0 keep their memory in databases that memdebug only ever reads, so they cannot be rolled back; change those in the app.
+
+## Rolling back markdown in git, by path
 
 `memdebug rollback markdown` puts a memory folder back to what a snapshot held. It is the only command that changes
 your files, so it is cautious by design.
@@ -174,7 +213,7 @@ What it guarantees:
 * **It can be undone.** It takes a snapshot just before and just after, and records a `ROLLBACK` entry in the ledger.
   To undo a rollback, roll back to the "before" snapshot it printed.
 
-`memdebug selftest` proves the "no programs run" and "exact bytes" claims on your computer.
+`memdebug selftest` proves the "no programs run" and "exact bytes" claims, and the folder-rollback claims, on your computer.
 
 ## Fonts
 

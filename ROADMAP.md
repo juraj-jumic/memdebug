@@ -16,6 +16,8 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
   (exit code 1 when something needs a look), `status`, `watch`.
 * Detection of changes that bypassed a store's own history, with false-alarm guards.
 * **Reports** in Markdown, JSON and SARIF, with CI exit codes.
+* **Rollback for plain folders** (`memdebug rollback store`, and `memdebug snapshot store` to save a known-good copy first), rebuilt from the snapshot's
+  text with backups of anything replaced; Open WebUI and Mem0 still cannot be rolled back.
 * **Published on PyPI** as `memdebug` (`pip install memdebug`), released by a tag-triggered workflow that needs an approval click.
 * **A first slice of provenance for Open WebUI:** its own `created_by` label and a chat-timing comparison, as evidence only.
 * **Hints** ("worth a second look"): heuristics for instructions to send data, remove confirmation or weaken safeguards,
@@ -28,9 +30,7 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 
 ## Next, roughly in this order
 
-1. **Rollback for plain folders.** Folders have no git history, so this needs a private store of exact file versions kept by
-   memdebug, with the same guarantees as the git version (dry run, backups, undo on failure). It adds a second write path into
-   your files, so it gets the same adversarial testing before it ships.
+1. **Rollback for plain folders: built** (see Built). Still to do: a way to list and clean up old backups, and trying it on real agent memory folders.
 2. **More provenance.** A first slice exists for Open WebUI (the app's own label and how close a chat was). Still to do: which conversation turn
    wrote a memory and what the assistant had just read, and readers for other agents' session logs (Claude Code transcripts, OpenClaw).
    The earlier plan, in full: **Provenance from session logs.** Which conversation turn wrote a memory, and whether it came from the user or from
@@ -38,8 +38,8 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
    candidates: Open WebUI chat records, Claude Code session transcripts), and depends on seeing real log formats.
 3. **More agents,** each added only once its memory location is documented (candidates: Cursor, Cline, Aider, Continue, Goose, Claude Desktop's local files).
 4. **Releases.** 0.2.0 was published to GitHub and PyPI on 2026-10-07 through the tag-triggered workflow (PyPI trusted publishing, with a
-   required approval and provenance attestations). The install from PyPI has been checked in a clean Linux environment; Windows and macOS
-   installs still need the same check. Still to do: signed release notes and a smoother route for people without Python (item 5).
+   required approval and provenance attestations). The install from PyPI has been checked in a clean Linux environment and on Windows 11 (pipx, Python 3.14); macOS
+   still needs the same check. Still to do: signed release notes and a smoother route for people without Python (item 5).
 5. **Better setup for non-advanced users:** an installer with no Python knowledge needed, and a way to keep `watch` running
    without a terminal.
 6. **Viewer:** filter by store, show hints in the overview, a status page that matches `memdebug status`.

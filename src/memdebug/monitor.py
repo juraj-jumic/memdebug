@@ -200,6 +200,30 @@ def store_hints(store: StoreConfig, *, limit: int = 10, budget: float = 3.0, ref
     return found[:limit]
 
 
+# -- snapshots a person asks for -------------------------------------------------------------------------------------------
+
+def alarms_since_snapshot(ledger: Ledger, backend: str, scope: dict[str, str], *, limit: int = 50) -> list[tuple[str, str]]:
+    """What the ledger recorded about one store since its latest snapshot that a person should look at before a NEW snapshot is
+    taken and later trusted as "good": changes made outside the store's own history, and changes whose wording looks suspicious.
+    It is worked out from the ledger every time, so it does not go away once it has been shown (or looked past)."""
+    snapshots = [info for info in ledger.list_snapshots() if info.backend == backend and info.scope == scope]
+    start = max((info.ledger_seq for info in snapshots), default=0)
+    found: list[tuple[str, str]] = []
+    for entry in ledger.entries()[start:]:
+        event = entry.event
+        if event.backend != backend or event.scope != scope:
+            continue
+        if event.op == Op.EXTERNAL:
+            found.append((event.memory_id, "changed outside the store's own history"))
+        elif event.op in (Op.ADD, Op.UPDATE):
+            hints = [h for h in new_hints(event.before, event.after, budget=0.1, max_chars=20_000) if h.severity == "warning"]
+            if hints:
+                found.append((event.memory_id, hints[0].message))
+        if len(found) >= limit:
+            break
+    return found
+
+
 # -- baseline ---------------------------------------------------------------------------------------------------------
 
 def baseline(store: StoreConfig, ledger: Ledger, label: str = "baseline", *, refresh: bool = True) -> str:

@@ -5,10 +5,12 @@ import tempfile
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import typer
 
+from .adapters.folder import FolderAdapter
+from .adapters.folder_restore import FolderRestorer
 from .adapters.markdown_git import MarkdownGitAdapter
 from .adapters.mem0 import Mem0Adapter, build_mem0_memory, validate_scope
 from .adapters.openwebui import OpenWebUIAdapter
@@ -20,10 +22,10 @@ from .diff import Diff, diff_snapshots, line_diff
 from .docker_source import valid_container
 from .errors import MemdebugError
 from .ledger import Ledger
-from .monitor import baseline, check_all, status_lines, store_hints, summary_lines, watch
-from .paths import default_ledger_path
+from .monitor import alarms_since_snapshot, baseline, check_all, check_store, status_lines, store_hints, summary_lines, watch
+from .paths import backup_root_for, default_ledger_path
 from .report import RENDERERS, build_report, write_report
-from .rollback_flow import run_rollback
+from .rollback_flow import Restoring, run_rollback
 from .stores import (
     KIND_NAMES,
     KINDS,
@@ -358,6 +360,44 @@ def snapshot_markdown(
     _run_snapshot(adapter, _open_ledger(db), scope, notes, settle, label, diff_from, adopt_existing)
 
 
+@snapshot_app.command("store")
+@guarded
+def snapshot_store(
+    name: str = typer.Argument(..., help="The name of a watched store (see 'memdebug stores')."),
+    label: Optional[str] = typer.Option(None, "--label", help="A short note about this snapshot (default: 'saved by hand')."),
+    include_changes: bool = typer.Option(False, "--include-changes", help="Save it even though the ledger holds changes you have not reviewed."),
+    settle: float = SETTLE_OPTION,
+    db: Path = DB_OPTION,
+):
+    """Save a snapshot of a watched store as it is now, so 'memdebug rollback store' can put it back later. A snapshot is what a
+    rollback treats as good, so this refuses when the ledger holds an outside-history change or suspicious wording recorded since
+    the store's last snapshot: look at that first ('memdebug serve'), then add --include-changes if it is fine."""
+    cfg = _watched_store(name, db)
+    if label is not None and not 0 < len(label) <= 100:
+        raise MemdebugError("the label must be 1 to 100 characters")
+    ledger = _open_ledger(db)
+    result = check_store(cfg, ledger, settle=settle)  # look first, so everything up to this moment is in the ledger
+    if result.error:
+        raise MemdebugError(result.error)
+    opened = open_store(cfg, refresh=False)
+    flagged = alarms_since_snapshot(ledger, opened.adapter.name, opened.scope)
+    if flagged and not include_changes:
+        echo(f"Not saved. Since the last snapshot of {safe_text(cfg.name, 40)}, the ledger recorded changes worth a second look:")
+        for memory_id, why in flagged[:8]:
+            echo(f"  {safe_text(memory_id, 60)}: {safe_text(why, 120)}")
+        if len(flagged) > 8:
+            echo(f"  ... and {len(flagged) - 8} more")
+        echo("A snapshot is what a rollback later treats as good, so look at these first ('memdebug serve').")
+        echo("If they are fine, run this again with --include-changes.")
+        raise typer.Exit(1)
+    snapshot_id = baseline(cfg, ledger, label or "saved by hand", refresh=False)
+    echo(f"Saved snapshot {snapshot_id} of {safe_text(cfg.name, 40)}.")
+    if cfg.kind in ("markdown", "folder"):
+        echo(f"To put the store back to it later: memdebug rollback store {cfg.name} --to {snapshot_id}")
+    else:
+        echo("This store can be compared with it ('memdebug diff'), but not rolled back: memdebug only ever reads it.")
+
+
 @snapshot_app.command("list")
 @guarded
 def snapshot_list(db: Path = DB_OPTION):
@@ -462,7 +502,7 @@ def _print_plan(plan: Plan, snapshot_label: str, full: bool) -> None:
     if plan.items:
         saved = sum(1 for i in plan.items if i.backup)
         echo(f"\n{len(plan.items)} file(s) would change"
-             + (", in one new commit" if plan.commits else ", with no new commit")
+             + (", in one new commit" if plan.commits else ", with no new commit" if plan.branch else ", changed in place")
              + (f"; {saved} would be saved to a backup first" if saved else "") + ".")
     for reason in plan.blockers:
         echo(f"\nCannot be applied now: {safe_text(reason, 300)}")
@@ -488,8 +528,16 @@ def rollback_markdown(
     ledger = _open_ledger(db)
     snapshot = ledger.load_snapshot(to)  # fail before doing any work
     adapter, scope, _ = _setup_markdown(path, store, subdir)
-    restorer = Restorer(adapter)
-    chosen = list(only or [])
+    _rollback_command(adapter, scope, Restorer(adapter), ledger, snapshot, only=list(only or []), remove_added=remove_added, full=full,
+                      apply=apply, yes=yes, settle=settle,
+                      undo_command="memdebug rollback markdown --path <the same folder> --to {id} --apply",
+                      record_command="memdebug sync markdown --path ...")
+
+
+def _rollback_command(adapter, scope: dict[str, str], restorer: Restoring, ledger: Ledger, snapshot, *, only: list[str],
+                      remove_added: bool, full: bool, apply: bool, yes: bool, settle: float, undo_command: str, record_command: str) -> None:
+    """Plan, show, confirm and carry out a rollback. Shared by every store type, so they all behave the same way."""
+    chosen = list(only)
     plan = restorer.plan(snapshot, only=chosen, remove_added=remove_added)
     label = f" ({safe_text(snapshot.info.label, 60)})" if snapshot.info.label else ""
     _print_plan(plan, label, full)
@@ -513,18 +561,53 @@ def rollback_markdown(
     outcome = result.outcome
     if result.entry is None:
         echo(f"The files were restored, but recording it in the ledger failed: {result.record_error}", err=True)
-        echo(f"Run 'memdebug sync markdown --path ...' to record the changes. Undo point: snapshot {result.before.id}.", err=True)
+        echo(f"Run '{record_command}' to record the changes. Undo point: snapshot {result.before.id}.", err=True)
         raise typer.Exit(3)
     echo(f"\nRestored {len(outcome.items)} file(s) to {snapshot.info.id}. Recorded as {result.entry.event.memory_id}.")
     if outcome.commit:
         echo(f"New commit {outcome.commit[:12]} on {safe_text((outcome.branch or '').removeprefix('refs/heads/'), 60)} "
              f"(it was at {(outcome.previous_head or '')[:12]}).")
-    if outcome.backup_ref:
+    if outcome.backup_path:
+        echo(f"What was replaced or removed was saved first, byte for byte: {safe_text(outcome.backup_path, 200)}")
+        echo("  Get a file back by copying it out of that folder's 'files' folder.")
+    elif outcome.backup_ref:
         echo(f"Content that git did not have was saved first: {outcome.backup_ref}")
         echo("  Get a file back with: git checkout <that name> -- <file>")
-    echo(f"To undo this rollback: memdebug rollback markdown --path <the same folder> --to {result.before.id} --apply")
+    echo(f"To undo this rollback: {undo_command.format(id=result.before.id)}")
     echo("Now restart your agent's session: a running session keeps the memory it already loaded.")
     echo(f"Ledger head: {ledger.head()}")
+
+
+@rollback_app.command("store")
+@guarded
+def rollback_store(
+    name: str = typer.Argument(..., help="The name of a watched store (see 'memdebug stores')."),
+    to: str = typer.Option(..., "--to", help="The snapshot to go back to (for example s1; 'memdebug snapshot list' shows them)."),
+    db: Path = DB_OPTION,
+    only: Optional[list[str]] = typer.Option(None, "--only", help="Restore only this file (repeat for several)."),
+    remove_added: bool = typer.Option(False, "--remove-added", help="Also remove files added since the snapshot (they are saved first)."),
+    full: bool = typer.Option(False, "--full", help="Show the line changes for each file."),
+    apply: bool = typer.Option(False, "--apply", help="Do it. Without this, nothing is changed."),
+    yes: bool = typer.Option(False, "--yes", help="Do not ask for confirmation (needed when not at a keyboard)."),
+    settle: float = SETTLE_OPTION,
+):
+    """A watched store, by name: markdown notes in git (restored with a new commit) or a plain folder of notes (changed in place,
+    with whatever is replaced saved first). A folder is rebuilt from the snapshot's text, which does not keep line endings exactly.
+    Open WebUI and Mem0 keep their memory in databases that memdebug only ever reads, so they cannot be rolled back."""
+    cfg = _watched_store(name, db)
+    if cfg.kind not in ("markdown", "folder"):
+        raise MemdebugError(f"{KIND_NAMES[cfg.kind]} cannot be rolled back: memdebug only ever reads it. Review or change it in the app itself.")
+    ledger = _open_ledger(db)
+    snapshot = ledger.load_snapshot(to)  # fail before doing any work
+    opened = open_store(cfg, refresh=False)
+    restorer: Restoring
+    if cfg.kind == "markdown":
+        restorer = Restorer(cast(MarkdownGitAdapter, opened.adapter))
+    else:
+        restorer = FolderRestorer(cast(FolderAdapter, opened.adapter), backup_root_for(db or default_ledger_path()))
+    _rollback_command(opened.adapter, opened.scope, restorer, ledger, snapshot, only=list(only or []), remove_added=remove_added, full=full,
+                      apply=apply, yes=yes, settle=settle, undo_command=f"memdebug rollback store {cfg.name} --to {{id}} --apply",
+                      record_command="memdebug check")
 
 
 @app.command("demo")
@@ -561,7 +644,8 @@ def demo_command(
         echo(f"\nThe demo folder was kept: {path}")
     else:
         echo("\nThe throwaway folder was removed.")
-    echo("Next: point memdebug at your own memory, for example:  memdebug snapshot markdown --path <folder> --label baseline")
+    echo("Next: see which agents keep memory on this computer and choose what to watch:  memdebug setup")
+    echo("      (it asks before watching anything; 'memdebug agents' only lists what it finds)")
 
 
 # -- registered stores: add, stores, remove, check, status, watch, setup ---------------------------------------------------
@@ -569,6 +653,13 @@ def demo_command(
 def _config_path(db: Optional[Path]) -> Path:
     """The list of watched stores lives next to the ledger it belongs to."""
     return (db or default_ledger_path()).with_name("stores.json")
+
+
+def _watched_store(name: str, db: Optional[Path]) -> StoreConfig:
+    cfg = load_registry(_config_path(db)).get(name)
+    if cfg is None:
+        raise MemdebugError(f"there is no watched store named {safe_text(name, 40)}; 'memdebug stores' lists them")
+    return cfg
 
 
 def _guess_name(path: Path, taken: set[str]) -> str:
@@ -702,7 +793,7 @@ def check_command(
     for note in [w for r in summary.results for w in r.warnings][:5] + ([summary.witness_warning] if summary.witness_warning else []):
         echo(f"  warning: {safe_text(note, 300)}", err=True)
     if summary.attention or summary.hinted:
-        echo("  Look closer: 'memdebug serve' shows exactly what changed. 'memdebug rollback ...' can put markdown notes back.")
+        echo("  Look closer: 'memdebug serve' shows exactly what changed. 'memdebug rollback store <name> --to <snapshot>' can put markdown or folder notes back.")
     raise typer.Exit(summary.exit_code_for(strict))
 
 

@@ -62,6 +62,11 @@ class FolderAdapter(MarkdownGitAdapter):
                 raise AdapterError("the files to watch must be 1 to 10 plain markdown file names in the folder itself")
             self._only = names
 
+    @property
+    def only(self) -> tuple[str, ...] | None:
+        """The named files this store is limited to, or None when it covers the whole folder."""
+        return self._only
+
     def read_history(self, max_rows: int) -> HistoryRead:
         return HistoryRead(events=[], refs=set(), truncated=False)
 

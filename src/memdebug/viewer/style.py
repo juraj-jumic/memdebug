@@ -181,6 +181,7 @@ pre .add{color:var(--add);display:block}pre .del{color:var(--del);display:block}
 .headline{max-width:24ch}
 .fingerprint{display:block;margin:4px 0 8px;padding:10px 12px;background:var(--sheet);border-left:3px solid var(--ink);overflow-wrap:anywhere}
 .attention{margin-top:34px;padding-top:2px}
+.putback{margin:30px 0 0;padding:2px 0 2px 16px;border-left:4px solid var(--out)}.putback h2{margin-top:0}.putback pre{margin:10px 0}
 .attention h2{margin-top:0}
 
 /* tables */
