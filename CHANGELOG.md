@@ -6,9 +6,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 ## [Unreleased]
 
 ### Added
-- `memdebug.provenance`: a reader that finds which logged Claude Code call wrote a given note in a given period, from its session logs. It returns only
-  session and record ids, a tool name and a time, never a path or any text from a log; it is evidence, not proof, and shell-made changes cannot be
-  matched (they are only counted). No command or page uses it yet.
+- **Who wrote it.** For a changed note that looks suspicious, or that changed outside git, `memdebug check` and `memdebug watch` now also say which
+  logged Claude Code session wrote it, from that agent's session logs ("who wrote it: ..."), or that no logged edit explains it. It returns only a
+  session id, a time and a tool name, never a path or any text from a log. It is evidence, not proof: a deleted log looks the same as a note nobody
+  wrote, and shell-made changes cannot be matched (they are only counted). See `docs/threat-model.md`.
 - The viewer has an **Agents** page (`memdebug serve`): the known agents that appear to be installed and what memdebug could watch for each, with the command
   to run (`memdebug setup`). It only checks that folders exist, opens no file, and works even while the ledger is busy.
 - Cline is in the agent catalog: `memdebug agents` and `memdebug setup` offer its global rules folder (`~/Documents/Cline/Rules`) once it holds markdown rules.

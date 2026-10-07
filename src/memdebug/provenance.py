@@ -20,11 +20,12 @@ import json
 import os
 import re
 import stat
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .adapters.markdown_git import _is_reparse_point
+from .adapters.markdown_git import _is_reparse_point, _valid_relpath
 
 MAX_PROJECT_FOLDERS = 1000
 MAX_LOG_FILES = 500
@@ -58,6 +59,58 @@ class Provenance:
     shell_calls: int              # shell commands that ran in the period; they might have written the file and cannot be matched
     logs_read: int
     complete: bool                # False when a limit, an unreadable log or an oversized line meant some of the period was not searched
+
+
+@dataclass(frozen=True)
+class Explanation:
+    """What a search for one change's writer came to: either why nothing was searched, or the result."""
+    reason: str | None = None     # set when no search was made
+    result: Provenance | None = None
+
+
+def note_paths(root: str | os.PathLike[str], memory_id: str) -> list[str]:
+    """Where a note lives, spelled the ways a log might spell it (as registered, and with links resolved). The id comes from the ledger, which
+    anyone could edit, so a path is built only from an id that passes the check the store readers apply to every file name; else nothing."""
+    if _valid_relpath(memory_id, (".md",)) is None:
+        return []
+    parts = memory_id.split("/")
+    spellings = {os.path.join(os.fspath(root), *parts)}
+    try:
+        spellings.add(os.path.join(os.path.realpath(root), *parts))
+    except (OSError, ValueError):
+        pass
+    return sorted(spellings)
+
+
+def explain_change(root: str | os.PathLike[str], memory_id: str, since: datetime | None, noticed: datetime, home: Path | None = None) -> Explanation:
+    """Search the session logs for what wrote one note between `since` (the last time the ledger recorded anything about it) and `noticed`.
+    `since` is a looser bound than the true last look, so the real write is never left out; it may take in earlier ones."""
+    if since is None:
+        return Explanation(reason="no earlier record of this store to say when the change happened")
+    if since.tzinfo is None or noticed.tzinfo is None:
+        return Explanation(reason="the time of the change is not known")
+    paths = note_paths(root, memory_id)
+    if not paths:
+        return Explanation(reason="the note's name is not one memdebug can look up")
+    return Explanation(result=find_writers(paths, since, noticed + CLOCK_SLACK, home))
+
+
+def describe_explanation(explanation: Explanation) -> str:
+    """One line for a person. It states what was found and what it cannot show; every value in it was checked or comes from a fixed list."""
+    if explanation.result is None:
+        return f"not searched: {explanation.reason}"
+    found = explanation.result
+    incomplete = "; part of the period could not be searched" if not found.complete else ""
+    if found.writers:
+        latest = found.writers[0]
+        more = f" (and {len(found.writers) - 1} more)" if len(found.writers) > 1 else ""
+        return (f"a Claude Code session logged a call to its {latest.tool} tool on it at {latest.at:%Y-%m-%d %H:%M:%S} UTC, "
+                f"session {latest.session[:8]}{more}{incomplete}")
+    if found.logs_read == 0:
+        return "no Claude Code session logs were found to check" + incomplete
+    shell = (f"; {found.shell_calls} shell command{'' if found.shell_calls == 1 else 's'} ran in that time and cannot be matched"
+             if found.shell_calls else "")
+    return f"no logged edit explains it{shell}{incomplete}. A deleted log looks the same, so this is not proof of anything"
 
 
 def _norm(path: str) -> str:
@@ -155,11 +208,13 @@ def _calls(record: object):
             yield session, uuid, at, block["name"], block.get("input")
 
 
-def find_writers(path: str | os.PathLike[str], start: datetime, end: datetime, home: Path | None = None) -> Provenance:
-    """The logged calls that wrote `path` between `start` and `end` (both timezone-aware). The path is compared as text and never opened."""
+def find_writers(path: str | os.PathLike[str] | Sequence[str], start: datetime, end: datetime, home: Path | None = None) -> Provenance:
+    """The logged calls that wrote `path` between `start` and `end` (both timezone-aware). `path` may be several spellings of one file. Paths
+    are compared as text and never opened."""
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start and end must carry a time zone")
-    target = _norm(os.fspath(path))
+    spellings = [path] if isinstance(path, (str, os.PathLike)) else list(path)
+    targets = {_norm(os.fspath(p)) for p in spellings}
     root = (home or Path.home()) / ".claude" / "projects"
     files, complete = _log_files(root, start)
     writers: dict[tuple[str, str, str], Writer] = {}
@@ -187,7 +242,7 @@ def find_writers(path: str | os.PathLike[str], start: datetime, end: datetime, h
                         shell_calls += 1
                     elif tool in WRITE_TOOLS and isinstance(given, dict):
                         written = given.get(WRITE_TOOLS[tool])
-                        if isinstance(written, str) and _norm(written) == target:
+                        if isinstance(written, str) and _norm(written) in targets:
                             writers[(session, uuid, tool)] = Writer(session, uuid, tool, at)
             logs_read += 1
         except OSError:

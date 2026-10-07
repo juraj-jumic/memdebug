@@ -15,7 +15,8 @@ from .backends import friendly_id
 from .errors import MemdebugError
 from .hints import Hint, new_hints, scan
 from .ledger import Ledger
-from .models import Op
+from .models import LedgerEntry, MemoryEvent, Op
+from .provenance import describe_explanation, explain_change
 from .stores import Registry, StoreConfig, open_store
 from .sync import sync
 from .textsafe import safe_text
@@ -23,6 +24,8 @@ from .witness import SAME_DISK_WARNING, WitnessError, append_witness, same_disk
 
 VERBS = {Op.ADD: "added", Op.UPDATE: "edited", Op.DELETE: "removed", Op.EXTERNAL: "changed outside the history"}
 MIN_INTERVAL = 5.0
+EXPLAINABLE_KINDS = ("folder", "markdown")  # stores whose notes are files an agent's edit tool could have written
+MAX_EXPLAINED = 5                           # searches of the session logs in one pass over a store
 
 
 @dataclass
@@ -34,6 +37,7 @@ class StoreResult:
     warnings: list[str] = field(default_factory=list)
     hints: list[tuple[str, Hint]] = field(default_factory=list)  # wording worth a second look in what changed
     previews: dict[str, str] = field(default_factory=dict)  # the start of what each changed memory says, to label opaque ids
+    provenance: dict[str, str] = field(default_factory=dict)  # which logged agent session wrote a flagged note, in words (see provenance.py)
 
     @property
     def attention(self) -> bool:
@@ -100,6 +104,20 @@ def hint_lines(result: StoreResult) -> list[str]:
     return shown
 
 
+def _search_start(earlier: list[LedgerEntry], event: MemoryEvent) -> datetime | None:
+    """When to start looking for what wrote a changed note: the last time the ledger recorded anything about that note, else about its store.
+    Both are earlier than the true last look, so the real write is never left out. None for a store seen for the first time."""
+    same_store = [e.event for e in earlier if e.event.backend == event.backend and e.event.scope == event.scope]
+    return max((e.ts for e in same_store if e.memory_id == event.memory_id), default=None) or max((e.ts for e in same_store), default=None)
+
+
+def provenance_lines(result: StoreResult) -> list[str]:
+    shown = [f"    who wrote it: {friendly_id(mid, result.previews.get(mid))}: {safe_text(text, 240)}" for mid, text in list(result.provenance.items())[:3]]
+    if len(result.provenance) > 3:
+        shown.append(f"    ... and {len(result.provenance) - 3} more")
+    return shown
+
+
 def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> StoreResult:
     result = StoreResult(store)
     before = ledger.counts()["events"]
@@ -114,14 +132,19 @@ def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> S
         return result
     result.warnings = [safe_text(w, 300) for w in opened.notes + report.warnings]
     result.outside_history = report.external_events
-    for entry in ledger.entries()[before:]:
+    entries = ledger.entries()
+    for entry in entries[before:]:
         event = entry.event
         if event.op in VERBS:
             result.changes.append((event.op, event.memory_id))
             result.previews[event.memory_id] = event.after if event.after is not None else (event.before or "")
-        if event.op in (Op.ADD, Op.UPDATE, Op.EXTERNAL) and len(result.hints) < 20:
-            result.hints += [(event.memory_id, h) for h in new_hints(event.before, event.after, budget=0.1, max_chars=20_000)
-                             if h.severity == "warning"][:3]
+        flagged = [h for h in new_hints(event.before, event.after, budget=0.1, max_chars=20_000) if h.severity == "warning"][:3] \
+            if event.op in (Op.ADD, Op.UPDATE, Op.EXTERNAL) and len(result.hints) < 20 else []
+        result.hints += [(event.memory_id, h) for h in flagged]
+        if (event.ts_observed and store.kind in EXPLAINABLE_KINDS and (event.op == Op.EXTERNAL or flagged)
+                and len(result.provenance) < MAX_EXPLAINED and event.memory_id not in result.provenance):
+            result.provenance[event.memory_id] = describe_explanation(
+                explain_change(store.path, event.memory_id, _search_start(entries[:before], event), event.ts))
     return result
 
 
@@ -141,7 +164,7 @@ def check_all(registry: Registry, ledger: Ledger, *, settle: float = 1.0, ledger
 
 
 def summary_lines(summary: CheckSummary) -> list[str]:
-    lines = [line for r in summary.results for line in [describe(r), *hint_lines(r)]]
+    lines = [line for r in summary.results for line in [describe(r), *hint_lines(r), *provenance_lines(r)]]
     lines.append("  The ledger is intact." if summary.ledger_ok else "  PROBLEM: the ledger failed its integrity check: "
                  + (summary.ledger_problems[0] if summary.ledger_problems else ""))
     if summary.witness_note:
@@ -257,7 +280,7 @@ def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[st
             last_error[result.store.name] = result.error
             if not result.quiet:
                 say(f"[{stamp}]{describe(result)}")
-                for line in hint_lines(result):
+                for line in [*hint_lines(result), *provenance_lines(result)]:
                     say(line)
                 shown = True
         if not summary.ledger_ok:

@@ -86,6 +86,22 @@ a control, that the attack works against ordinary git, and reports SKIP rather t
 | A command shown for copying that a hostile ledger turned into something else | The "put it back" guidance is only text, never a link or a button. A store name from the ledger goes into a command only if it passes the same strict rule as a watched store's name (lowercase letters, digits, dot, dash, underscore); anything else gets a `<name>` placeholder, so pasting a command can never do more than the command says. Stores memdebug cannot write to never get one. For an outside change it names only a snapshot taken before it |
 | Odd, oversized or slow requests | Strict limits on request line, path, query, headers, connections and time; only fixed routes and validated ids; nothing from the request is echoed |
 
+## Who wrote a change (agent session logs)
+
+`memdebug check` can say which logged Claude Code session wrote a flagged note, by searching that agent's session logs (`~/.claude/projects/*/*.jsonl`)
+for edit calls on the note's path. The answer is **evidence, never proof**: anyone who can edit a memory folder can edit or delete a log, a deleted
+log looks the same as a note nobody wrote, and a change made by a shell command has no path in the log, so it can only be counted. The logs are whole
+conversations, so they are handled as hostile and private.
+
+| Risk | Defence |
+| --- | --- |
+| Log text (instructions, escape codes, markup) reaching the screen or a page | Nothing from a log is returned except a session id and a record id (each must match a strict pattern ending in `\Z`), a time, and the name of one of a fixed list of tools. No path, no message text; the sentence shown is built from those values only and goes through `safe_text` |
+| A hostile ledger name steering the search | A note's path is built only from an id that passes the same file-name check the store readers use; otherwise nothing is searched |
+| Following a link or reading something that is not a session log | Only plain `.jsonl` files directly inside real project folders are opened, with `lstat` checks and `O_NOFOLLOW`; links, junctions and anything else are skipped |
+| A huge, damaged or deeply nested log | Fixed limits on files, bytes per log, bytes in total and bytes per line; bad lines are skipped; when a limit stops the search the result says it is incomplete |
+| Reading logs needlessly | Only changes that were noticed (not ones a store's own history explains) and that look suspicious or happened outside the history are searched, at most five per pass; a log not written since the period began is never opened |
+| Over-trusting the answer | The wording says what it cannot show ("a deleted log looks the same, so this is not proof of anything"); a search that could not cover the whole period says so |
+
 ## Rollback (markdown/git)
 
 Rollback is the only part of memdebug that changes your files, so it is the most constrained.
