@@ -339,6 +339,7 @@ def test_no_validator_accepts_a_trailing_line_break():
     import memdebug.adapters.markdown_git as mg
     import memdebug.adapters.restore as rs
     import memdebug.ledger as lg
+    import memdebug.provenance as pv
     import memdebug.report as rp
     import memdebug.stores as stores
     import memdebug.viewer.html as vh
@@ -351,6 +352,7 @@ def test_no_validator_accepts_a_trailing_line_break():
         (lg._SHA_RE.match, sha), (lg._BACKUP_REF_RE.match, "refs/memdebug/backups/20261005T120000Z-0123abcd"), (mg._SHA_RE.match, sha),
         (wit._HASH.match, h64), (rs._BRANCH_RE.match, "refs/heads/main"), (rp._PATHLIKE.match, "notes/a.md"), (vh._INTERNAL_URL.match, "/timeline"),
         (vs._NEXT_VALUE.match, "e1"), (vs._NEXT_TEXT.match, "/timeline?event=e1"),
+        (pv._UUID.match, "11111111-1111-4111-8111-111111111111"), (pv._TIME.match, "2026-10-07T18:29:03.104Z"),
         *[(vs._ID_RE[name].match, good) for name, good in (("event", "e1"), ("snapshot", "s1"), ("number", "5"), ("page", "2"), ("flag", "1"))],
         *[(rx.match, path) for (name, rx), path in zip(vs._ROUTES, ["/", "/timeline", "/event/e1", "/snapshots", "/snapshot/s1", "/diff", "/agents", "/integrity", "/style.css", "/theme"], strict=True)],
     ]
