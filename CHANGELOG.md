@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-07
 
 ### Added
 - **Rollback for plain folders.** `memdebug rollback store NAME --to s1` restores a watched folder of notes (and, by the same command, git notes) to a
