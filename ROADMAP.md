@@ -16,6 +16,7 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
   (exit code 1 when something needs a look), `status`, `watch`.
 * Detection of changes that bypassed a store's own history, with false-alarm guards.
 * **Reports** in Markdown, JSON and SARIF, with CI exit codes.
+* **Published on PyPI** as `memdebug` (`pip install memdebug`), released by a tag-triggered workflow that needs an approval click.
 * **A first slice of provenance for Open WebUI:** its own `created_by` label and a chat-timing comparison, as evidence only.
 * **Hints** ("worth a second look"): heuristics for instructions to send data, remove confirmation or weaken safeguards,
   hidden characters and secret-like strings. Labelled as guesses; secrets are never repeated.
@@ -36,10 +37,9 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
    something the agent read. This turns a change log into an incident-response tool. It needs a reader per agent (first
    candidates: Open WebUI chat records, Claude Code session transcripts), and depends on seeing real log formats.
 3. **More agents,** each added only once its memory location is documented (candidates: Cursor, Cline, Aider, Continue, Goose, Claude Desktop's local files).
-4. **Release.** Prepared: the package builds, passes PyPI's metadata check and installs and runs from a clean environment; the name `memdebug` was
-   free on PyPI when checked; CI builds and installs the package on every push; a tag-triggered publish workflow uses PyPI trusted publishing.
-   Left for the owner (they need accounts): register the trusted publisher on PyPI and tag the release. See docs/releasing.md.
-   CI and the release dry run have run on GitHub and passed on all three systems.
+4. **Releases.** 0.2.0 was published to GitHub and PyPI on 2026-10-07 through the tag-triggered workflow (PyPI trusted publishing, with a
+   required approval and provenance attestations). The install from PyPI has been checked in a clean Linux environment; Windows and macOS
+   installs still need the same check. Still to do: signed release notes and a smoother route for people without Python (item 5).
 5. **Better setup for non-advanced users:** an installer with no Python knowledge needed, and a way to keep `watch` running
    without a terminal.
 6. **Viewer:** filter by store, show hints in the overview, a status page that matches `memdebug status`.

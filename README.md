@@ -17,9 +17,23 @@ conversation* wrote a memory. See [docs/threat-model.md](docs/threat-model.md) f
 
 ## Try it in a minute
 
-    pip install .                 # needs Python 3.10+ and git 2.31+
+You need Python 3.10 or newer and git 2.31 or newer. Install memdebug from PyPI into its own virtual environment, which works the same way
+everywhere:
+
+    python -m venv memdebug-env
+    memdebug-env\Scripts\activate          # Windows (PowerShell or cmd); on macOS and Linux: source memdebug-env/bin/activate
+    pip install memdebug
+
+If you use [pipx](https://pipx.pypa.io/), `pipx install memdebug` does the same and keeps the `memdebug` command available everywhere. pipx is not
+installed on Windows by default; to get it: `py -m pip install --user pipx`, then `py -m pipx ensurepath`, then open a new terminal. If your shell
+cannot find the `memdebug` command after installing, `python -m memdebug` (on Windows `py -m memdebug`) does the same thing.
+
+Then:
+
     memdebug demo                 # made-up agent, made-up attack, the real tools; nothing of yours is touched
     memdebug demo --serve         # ...and then look at it in the browser viewer
+
+(To work on memdebug itself, install from a checkout instead: see [CONTRIBUTING.md](CONTRIBUTING.md).)
 
 The demo plants an instruction into a note behind git's back, shows memdebug catching it, rolls the file back without losing
 the planted text, and shows the ledger noticing a tampered copy. It works in a throwaway folder and removes it afterwards.

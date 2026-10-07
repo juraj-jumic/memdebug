@@ -34,7 +34,8 @@ proposes new versions of the upload and download actions) so a problem shows up 
 2. Update `__version__` in `src/memdebug/__init__.py` and `version` in `pyproject.toml` (they must match) and move the changelog entry from
    "unreleased" to the release date.
 3. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`. The workflow refuses to publish if the tag and the version differ.
-4. Approve the `pypi` environment if you required that. After a minute: `pipx install memdebug`, then `memdebug demo`.
+4. Approve the `pypi` environment if you required that. After a minute, in a clean virtual environment (not your working one), check the real
+   install: `pip install memdebug==<version>`, then `memdebug --version` and `memdebug demo`. Do this on Windows as well as Linux or macOS.
 
 ## If something goes wrong
 
