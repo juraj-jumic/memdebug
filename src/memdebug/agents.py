@@ -53,6 +53,9 @@ AGENTS: tuple[Agent, ...] = (
     Agent("windsurf", "Windsurf", (".codeium", "windsurf"),
           "stores its automatically generated memories on this computer only",
           (Place((".codeium", "windsurf", "memories"), (), "windsurf", "Cascade's memories (the markdown files in it)"),)),
+    Agent("cline", "Cline", ("Documents", "Cline"),
+          "has no memory store of its own; it follows the rules in your global Cline Rules folder, which is why planted text there matters",
+          (Place(("Documents", "Cline", "Rules"), (), "cline", "your global Cline Rules (the markdown files in it)"),)),
 )
 
 CLOUD_NOTE = ("ChatGPT, Claude (claude.ai and its desktop and phone apps), Gemini and Copilot keep their memory in the provider's cloud. "

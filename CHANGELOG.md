@@ -3,6 +3,11 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Added
+- Cline is in the agent catalog: `memdebug agents` and `memdebug setup` offer its global rules folder (`~/Documents/Cline/Rules`) once it holds markdown rules.
+
 ## [0.3.0] - 2026-10-07
 
 ### Added

@@ -56,6 +56,17 @@ def test_each_known_agent_is_found_with_exactly_what_can_be_watched(tmp_path):
     assert all(st.valid_name(n) for n in by_name) and all(c.kind == "folder" for c in by_name.values())
 
 
+def test_cline_global_rules_are_offered_only_when_markdown_rules_exist(tmp_path):
+    home = tmp_path / "home"
+    (home / "Documents" / "Cline" / "Rules").mkdir(parents=True)
+    (home / "Documents" / "Cline" / "other.md").write_text("beside the rules folder, not a rule\n", encoding="utf-8")
+    assert [c for f in ag.scan_agents(home) for c in f.candidates] == []  # installed, but no rule written yet
+    (home / "Documents" / "Cline" / "Rules" / "style.md").write_text("be brief\n", encoding="utf-8")
+    found = {f.agent.key: f for f in ag.scan_agents(home)}
+    [cand] = found["cline"].candidates
+    assert cand.name == "cline" and cand.path == home / "Documents" / "Cline" / "Rules" and cand.files is None and st.valid_name(cand.name)
+
+
 def test_a_computer_without_agents_says_so_and_still_explains_the_cloud(tmp_path):
     assert ag.scan_agents(tmp_path / "empty") == []
     lines = ag.summary_lines([])
