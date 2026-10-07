@@ -6,6 +6,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 ## [Unreleased]
 
 ### Added
+- The viewer has an **Agents** page (`memdebug serve`): the known agents that appear to be installed and what memdebug could watch for each, with the command
+  to run (`memdebug setup`). It only checks that folders exist, opens no file, and works even while the ledger is busy.
 - Cline is in the agent catalog: `memdebug agents` and `memdebug setup` offer its global rules folder (`~/Documents/Cline/Rules`) once it holds markdown rules.
 
 ## [0.3.0] - 2026-10-07

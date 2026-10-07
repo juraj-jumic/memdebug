@@ -308,6 +308,18 @@ def test_hostile_memory_text_never_becomes_markup_on_any_page(viewer, target):
     assert tags <= allowed_tags, tags - allowed_tags
 
 
+def test_every_form_on_every_page_only_navigates_with_get(viewer):
+    forms = 0
+    for target in ALL_PAGES:
+        if target == "/style.css":
+            continue
+        _, _, body = viewer.get(target)
+        for tag in re.findall(r"<form\b[^>]*>", body, re.IGNORECASE):
+            forms += 1
+            assert re.search(r'\smethod="get"', tag, re.IGNORECASE) and re.search(r'\saction="/[^/"]', tag), tag  # same site, no POST
+    assert forms >= 1  # the Compare form on /diff: this must not pass for lack of looking
+
+
 def test_the_payload_text_is_shown_as_text(viewer):
     _, _, body = viewer.get("/timeline?event=e2")
     assert "&lt;script&gt;alert(" in body and "<script" not in body.lower()  # shown as text, not markup

@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from ..agents import scan_agents
 from ..errors import LedgerError, SnapshotError
 from ..ledger import Ledger, VerifyResult
 from ..models import Op, Trust
@@ -87,6 +88,7 @@ _ROUTES = [
     ("snapshots", re.compile(r"^/snapshots\Z")),
     ("snapshot", re.compile(r"^/snapshot/(s[1-9][0-9]{0,8})\Z")),
     ("diff", re.compile(r"^/diff\Z")),
+    ("agents", re.compile(r"^/agents\Z")),
     ("integrity", re.compile(r"^/integrity\Z")),
     ("style", re.compile(r"^/style\.css\Z")),
     ("theme", re.compile(r"^/theme\Z")),
@@ -356,6 +358,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if name == "event":
             target = pages.url("/timeline", event=match.group(1))
             return self._send(303, b"", "text/plain; charset=utf-8", (("Location", target),))
+        if name == "agents":  # looks at the home folder, not the ledger, so it works while the ledger is busy
+            return self._page(pages.agents_page(self.ctx, scan_agents()))
         op = trust = None
         if name == "timeline":
             op = (query.get("op") or [None])[0]

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
+from ..agents import CLOUD_NOTE, FoundAgent
 from ..backends import HISTORYLESS, is_opaque_id, short_id
 from ..describe import describe_event, rollback_details
 from ..diff import Diff, diff_snapshots, line_diff
@@ -40,7 +41,7 @@ FILTERS = [  # (label, op, trust)
     ("Untrusted source", None, "untrusted"),
 ]
 NAV = [("overview", "Overview", "/"), ("timeline", "Timeline", "/timeline"), ("snapshots", "Snapshots", "/snapshots"),
-       ("compare", "Compare", "/diff"), ("integrity", "Integrity", "/integrity")]
+       ("compare", "Compare", "/diff"), ("agents", "Agents", "/agents"), ("integrity", "Integrity", "/integrity")]
 
 
 @dataclass(frozen=True)
@@ -331,6 +332,36 @@ def overview(ledger: Ledger, ctx: Context) -> Page:
                     "are ever removed or the ledger is rewritten. 'memdebug witness --file <a file on another drive>' keeps one for you."),
     ]
     return Page(200, document(ctx, "Overview", "overview", Markup("".join(str(p) for p in parts))))
+
+
+# -- agents --------------------------------------------------------------------------------------------------------
+
+def agents_page(ctx: Context, found: list[FoundAgent]) -> Page:
+    """The known agents that appear to be installed, and what memdebug could watch for each. Presence is only the existence of a folder: no
+    file is opened. Folder names come from the disk, so they are shown as escaped text and never put into a command; the one command given
+    is fixed text."""
+    parts: list[Markup] = [
+        el("h1", "Agents on this computer"),
+        el("p", "memdebug checked whether the folders these agents are known to use exist. It opened no file.", class_="sub"),
+    ]
+    if not found:
+        parts.append(notice("None of the agents memdebug knows were found."))
+    for item in found:
+        places = [el("li", el("strong", inline(c.name, 60)), " - ", inline(c.why, 200), el("br"), el("code", inline(str(c.path), 260)),
+                     *([el("br"), el("small", "Only these files are watched: ", inline(", ".join(c.files), 120))] if c.files else []))
+                  for c in item.candidates]
+        parts.append(el(
+            "section", el("h2", inline(item.agent.name, 60)), el("p", inline(item.agent.note, 300), class_="sub"),
+            el("ul", *places) if places else el("p", "Nothing to watch yet."), class_="agent"))
+    parts += [
+        el("h2", "Watch what was found"),
+        el("p", "This page cannot change anything. To start watching, run this in a terminal. It shows what it found and asks before it "
+                "adds anything.", class_="why"),
+        el("pre", block("memdebug setup")),
+        el("h2", "Not on this computer"),
+        el("p", inline(CLOUD_NOTE, 600), class_="sub"),
+    ]
+    return Page(200, document(ctx, "Agents", "agents", Markup("".join(str(p) for p in parts))))
 
 
 # -- timeline ------------------------------------------------------------------------------------------------------
