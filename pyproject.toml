@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "memdebug"
+version = "0.2.0"
+description = "Inspect, compare and roll back what an AI agent's memory holds. Local-first and agent-neutral."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Juraj Jumić" }]
+keywords = ["ai-agents", "memory", "security", "forensics", "prompt-injection", "tamper-evident"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+dependencies = ["pydantic>=2", "typer>=0.12"]
+
+[project.optional-dependencies]
+mem0 = ["mem0ai>=2"]
+dev = ["pytest>=8", "pytest-xdist>=3", "ruff>=0.6", "mypy>=1.11"]  # xdist runs the tests in parallel; the update script uses it when present
+test-mem0 = ["pytest>=8", "mem0ai>=2"]  # also runs the check against Mem0's real writer
+
+[project.scripts]
+memdebug = "memdebug.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/memdebug"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[project.urls]
+Homepage = "https://github.com/juraj-jumic/memdebug"
+Source = "https://github.com/juraj-jumic/memdebug"
+Issues = "https://github.com/juraj-jumic/memdebug/issues"
+Changelog = "https://github.com/juraj-jumic/memdebug/blob/main/CHANGELOG.md"
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Real mistakes and unused code, plus sorted imports. Deliberately modest: the gate must stay green and meaningful.
+select = ["E4", "E7", "E9", "F", "I", "B"]
+ignore = ["B008"]  # typer declares options as default arguments
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E702", "E731"]  # compact one-line cleanups in test helpers are fine
+
+[tool.ruff.lint.isort]
+known-first-party = ["memdebug"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/memdebug"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true

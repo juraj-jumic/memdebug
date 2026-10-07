@@ -1,0 +1,6 @@
+# One line-ending style in the repository on every platform. (Files memdebug writes for users are written byte for byte; this is only
+# about the source files.)
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

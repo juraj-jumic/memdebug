@@ -1,0 +1,57 @@
+# Runs the whole suite and the on-machine selftest on every platform. This is how Windows support
+# is verified: the code has Windows-specific paths that cannot be tested from Linux.
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e ".[test-mem0]"
+      - run: python -m pytest -q -rs
+      - run: python -m memdebug selftest
+      - run: python -m memdebug demo   # the whole tour on this operating system: git, files, ledger, rollback
+  lint:
+    # Real mistakes and types, on every push. (Formatting is not enforced.)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: mypy
+  package:
+    # The package people would install must build, pass PyPI's metadata check, and run from a clean environment.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install dist/*.whl
+          /tmp/clean/bin/memdebug --version
+          /tmp/clean/bin/memdebug demo
