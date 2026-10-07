@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [0.2.0] - unreleased
+## [0.2.0] - 2026-10-07
 
 ### Added
 - **Witness:** a second copy of the ledger's head kept elsewhere, so a rewritten or cut-short ledger is noticed (`memdebug witness`, `verify --witness`).
