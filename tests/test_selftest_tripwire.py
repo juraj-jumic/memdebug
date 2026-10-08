@@ -40,11 +40,16 @@ def run_check(check=None):
 
 
 def load_tripwire(tmp_path):
-    """The tripwire script as a module, so its functions can be called directly."""
+    """The tripwire script as a module, so its functions can be called directly. Loading is done with bytecode writing off: otherwise Python
+    drops a __pycache__ folder beside the script (CI runners do not set PYTHONDONTWRITEBYTECODE), which is no marker but is not nothing either."""
     path = st._write_tripwire(tmp_path / "trap.py")
     spec = importlib.util.spec_from_file_location("tripwire_under_test", path)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
     return module
 
 
