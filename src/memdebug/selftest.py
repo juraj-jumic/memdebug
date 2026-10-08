@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -35,7 +36,7 @@ from .adapters.mem0 import Mem0Adapter
 from .ledger import Ledger
 from .models import Memory, MemoryEvent, Op
 from .paths import default_ledger_path
-from .textsafe import console_safe
+from .textsafe import console_safe, safe_text
 
 Result = tuple[str, str, str]  # name, PASS | FAIL | SKIP | INFO, detail
 
@@ -98,37 +99,50 @@ def check_git_ignores_global_config() -> str:
     return "a global git config pointed at by HOME is not read"
 
 
+def _config_trap_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
+    """A repository whose config names the tripwire for every setting that makes git run a program when it shows a diff, pages output, checks
+    the file system or opens an editor. One marker, `<prefix>-config`. (The tripwire and its helpers are defined further down, with the rollback check.)"""
+    root.mkdir(parents=True)
+    repo = root / "repo"
+    repo.mkdir()
+    marker = (markers_dir or root) / f"{prefix}-config"
+    command = f'"{Path(sys.executable).as_posix()}" "{trap.as_posix()}" "{marker.as_posix()}" config'
+    _git_run(git, repo, "init", "-q", "-b", "main")
+    for version in ("one", "two"):
+        (repo / "a.md").write_text(version + "\n", encoding="utf-8")
+        _git_run(git, repo, "add", "-A")
+        _git_run(git, repo, "commit", "-q", "-m", version)
+    for key in ("diff.external", "core.fsmonitor", "core.pager", "pager.log", "core.editor"):
+        _git_run(git, repo, "config", key, command)
+    _git_run(git, repo, "config", "core.hooksPath", str(root))
+    return _Hostile(repo, {"config": marker})
+
+
+def _run_config_control(git: str, hostile: _Hostile) -> bool:
+    """CONTROL: ordinary git, asked for a patch with the external diff allowed, runs the program on this machine. True if it did."""
+    subprocess.run([git, "log", "-p", "--ext-diff", "--no-color"], cwd=str(hostile.repo), env=_clean_env(),
+                   capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+    return hostile.markers["config"].exists()
+
+
 def check_hostile_repo_config_cannot_run_programs() -> str:
     git = _need_git()
     with _tmp() as base:
         base_path = Path(base)
-        marker = base_path / "PWNED"
-        script = base_path / "evil.py"
-        script.write_text(f"open({str(marker)!r}, 'w').write('x')\n", encoding="utf-8")
-        command = f'"{Path(sys.executable).as_posix()}" "{script.as_posix()}"'
-        repo = base_path / "repo"
-        repo.mkdir()
-        _git_run(git, repo, "init", "-q", "-b", "main")
-        for version in ("one", "two"):
-            (repo / "a.md").write_text(version + "\n", encoding="utf-8")
-            _git_run(git, repo, "add", "-A")
-            _git_run(git, repo, "commit", "-q", "-m", version)
-        for key in ("diff.external", "core.fsmonitor", "core.pager", "pager.log", "core.editor"):
-            _git_run(git, repo, "config", key, command)
-        _git_run(git, repo, "config", "core.hooksPath", str(base_path))
-
-        subprocess.run([git, "log", "-p", "--ext-diff", "--no-color"], cwd=str(repo), env=_clean_env(),
-                       capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
-        if not marker.exists():
+        trap = _write_tripwire(base_path / "trap.py")
+        # The control and the protected run each get a repository and a marker of their own (see check_rollback_is_safe for why).
+        control = _config_trap_repo(git, base_path / "control", trap, "CONTROL")
+        protected = _config_trap_repo(git, base_path / "protected", trap, "PWNED")
+        if not _run_config_control(git, control):
             raise _Skip("could not make a hostile config run a program here, so the protection is unproven")
-        marker.unlink()
 
-        adapter = MarkdownGitAdapter(repo, store="selftest")
+        adapter = MarkdownGitAdapter(protected.repo, store="selftest")
         adapter.read_history(100)
         adapter.history("a.md")
         adapter.list_memories({"store": "selftest"})
-        if marker.exists():
-            raise AssertionError("a program named in the repository's config was executed")
+        if protected.markers["config"].exists():
+            raise AssertionError("a program named in the repository's config was executed. What started it: "
+                                 + _tripwire_report(protected.markers, ["config"]) + f". {_git_version_line(git)}. {_NOT_A_LEFTOVER}")
     return "a repository config that runs programs did not run any"
 
 
@@ -377,53 +391,179 @@ def check_viewer_is_local_and_protected() -> str:
     return "; ".join(["listens on this computer only, refuses missing secret, wrong host name and writes, and its port cannot be shared"] + notes)
 
 
+TRIPS = ("filter", "diff", "hook", "fsmonitor")  # the ways a repository's own config can make git run a program
+
+# The program a hostile repository names. It records what started it (when, with which arguments, under which parent and grandparent command
+# lines where the platform shows them) and then acts as a pass-through filter. If one ever fires where it must not, the failure can say who ran
+# it instead of only that something did. Recording is best effort; the marker file itself always appears.
+_TRIPWIRE = r'''import datetime, json, os, subprocess, sys
+
+KEEP = ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_EXEC_PATH", "GIT_REFLOG_ACTION")
+
+
+def from_proc(pid):
+    """(command line, parent pid) read from /proc, which Linux has; (None, None) where that cannot be read."""
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as handle:
+            command = handle.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+        with open("/proc/%d/stat" % pid, "rb") as handle:
+            parent = int(handle.read().rsplit(b")", 1)[1].split()[1])
+        return command, parent
+    except (OSError, ValueError, IndexError):
+        return None, None
+
+
+def parse_ps(output):
+    """(command line, parent pid) from the output of `ps -o ppid=,command= -p PID`, e.g. '  501 /usr/bin/git status'; (None, None) if it is not that."""
+    parts = output.strip().split(None, 1)
+    if len(parts) != 2:
+        return None, None
+    try:
+        return parts[1].strip(), int(parts[0])
+    except ValueError:
+        return None, None
+
+
+def from_ps(pid):
+    """The same, asked of ps, which macOS and the BSDs have; (None, None) on Windows or when ps fails."""
+    if os.name != "posix":
+        return None, None
+    try:
+        shown = subprocess.run(["ps", "-o", "ppid=,command=", "-p", str(pid)], capture_output=True, timeout=5, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    return parse_ps(shown.stdout.decode("utf-8", "replace"))
+
+
+def process(pid):
+    """(command line, parent pid) of a process as far as this platform shows it, else (None, None)."""
+    found = from_proc(pid)
+    return found if found[0] is not None else from_ps(pid)
+
+
+def clip(text, limit=300):
+    """A long command line cut short, so it cannot crowd the rest of the record out of a failure message."""
+    return text if text is None or len(text) <= limit else text[:limit] + "..."
+
+
+def main():
+    marker = sys.argv[1]
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="microseconds")
+    try:
+        parent_command, grandparent_pid = process(os.getppid())
+        record = {
+            "time": now, "args": sys.argv[2:], "pid": os.getpid(), "ppid": os.getppid(),
+            "parent": clip(parent_command), "grandparent": clip(process(grandparent_pid)[0]) if grandparent_pid else None,
+            "cwd": os.getcwd(), "git_env": {name: os.environ[name] for name in KEEP if name in os.environ},
+        }
+    except Exception as exc:
+        record = {"time": now, "args": sys.argv[2:], "recording_failed": repr(exc)}
+    with open(marker, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
+    sys.stdout.buffer.write(sys.stdin.buffer.read())
+
+
+if __name__ == "__main__":  # importing this file (a test does) only defines the functions
+    main()
+'''
+
+_NOT_A_LEFTOVER = "The control phase used a separate repository and its own markers, so this is not a leftover from it."
+
+_ORIGINAL = b"alpha\r\nbeta\r\n"  # Windows line endings: a snapshot's normalised text cannot reproduce these
+
+
+@dataclass
+class _Hostile:
+    repo: Path
+    markers: dict[str, Path]
+
+
+def _write_tripwire(path: Path) -> Path:
+    path.write_text(_TRIPWIRE, encoding="utf-8")
+    return path
+
+
+def _hostile_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
+    """A repository whose own config names programs for git to run (a filter, an external diff, hooks, an fsmonitor), each one the tripwire,
+    recording into a marker file of its own. `prefix` names the markers, so two repositories made with different prefixes never share one."""
+    root.mkdir(parents=True)
+    repo = root / "repo"
+    repo.mkdir()
+    markers = {name: (markers_dir or root) / f"{prefix}-{name}" for name in TRIPS}
+    python = Path(sys.executable).as_posix()
+
+    def command(name: str) -> str:
+        return f'"{python}" "{trap.as_posix()}" "{markers[name].as_posix()}" {name}'
+
+    _git_run(git, repo, "init", "-q", "-b", "main")
+    (repo / "a.md").write_bytes(_ORIGINAL)
+    (repo / ".gitattributes").write_text("*.md filter=trap\n", encoding="utf-8")
+    _git_run(git, repo, "add", "-A")
+    _git_run(git, repo, "commit", "-q", "-m", "one")
+    (repo / "a.md").write_bytes(b"changed\n")
+    _git_run(git, repo, "add", "-A")
+    _git_run(git, repo, "commit", "-q", "-m", "two")
+
+    hooks = root / "hooks"
+    hooks.mkdir()
+    for hook in ("pre-commit", "post-commit", "reference-transaction", "post-index-change"):
+        script = f"#!/bin/sh\n'{python}' '{trap.as_posix()}' '{markers['hook'].as_posix()}' hook-{hook} \"$@\" </dev/null\n"
+        (hooks / hook).write_text(script, encoding="utf-8")
+        (hooks / hook).chmod(0o755)
+    for key, value in (("filter.trap.clean", command("filter")), ("filter.trap.smudge", command("filter")),
+                       ("diff.external", command("diff")), ("core.fsmonitor", command("fsmonitor")),
+                       ("core.hooksPath", str(hooks))):
+        _git_run(git, repo, "config", key, value)
+    return _Hostile(repo, markers)
+
+
+def _run_control(git: str, hostile: _Hostile) -> list[str]:
+    """CONTROL: with ordinary git, each of these traps fires on this machine. Returns the ones that did."""
+    raw = _clean_env()
+    cwd = str(hostile.repo)
+    subprocess.run([git, "hash-object", "a.md"], cwd=cwd, env=raw, capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+    subprocess.run([git, "log", "-p", "--ext-diff", "--no-color"], cwd=cwd, env=raw, capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+    _git_run(git, hostile.repo, "commit", "-q", "--allow-empty", "-m", "control")
+    return [name for name, marker in hostile.markers.items() if marker.exists()]
+
+
+def _git_version_line(git: str) -> str:
+    try:
+        out = subprocess.run([git, "--version"], capture_output=True, timeout=30, env=_clean_env(), stdin=subprocess.DEVNULL).stdout
+    except (OSError, subprocess.SubprocessError):
+        return "git --version: unavailable"
+    return "git --version: " + safe_text(out.decode("utf-8", "replace").strip() or "no output", 80)
+
+
+def _tripwire_report(markers: dict[str, Path], names: list[str]) -> str:
+    """What each tripwire that fired recorded: its calls, shortest useful form, safe to print."""
+    parts = []
+    for name in names:
+        try:
+            lines = [line for line in markers[name].read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+        except OSError:
+            lines = ["(the marker could not be read)"]
+        shown = " | ".join(safe_text(line, 1200) for line in lines[:3]) if lines else "(empty)"
+        parts.append(f"[{name}] {len(lines)} call(s): {shown}")
+    return "; ".join(parts)
+
+
 def check_rollback_is_safe() -> str:
     from .adapters.restore import Restorer
 
     git = _need_git()
     with _tmp() as base:
         base_path = Path(base)
-        repo = base_path / "repo"
-        repo.mkdir()
-        trap = base_path / "trap.py"
-        trap.write_text("import sys, pathlib\npathlib.Path(sys.argv[1]).write_text('x', encoding='utf-8')\nsys.stdout.buffer.write(sys.stdin.buffer.read())\n",
-                        encoding="utf-8")
-        markers = {name: base_path / f"PWNED-{name}" for name in ("filter", "diff", "hook", "fsmonitor")}
-
-        def command(name: str) -> str:
-            return f'"{Path(sys.executable).as_posix()}" "{trap.as_posix()}" "{markers[name].as_posix()}"'
-
-        _git_run(git, repo, "init", "-q", "-b", "main")
-        original = b"alpha\r\nbeta\r\n"  # Windows line endings: a snapshot's normalised text cannot reproduce these
-        (repo / "a.md").write_bytes(original)
-        (repo / ".gitattributes").write_text("*.md filter=trap\n", encoding="utf-8")
-        _git_run(git, repo, "add", "-A")
-        _git_run(git, repo, "commit", "-q", "-m", "one")
-        (repo / "a.md").write_bytes(b"changed\n")
-        _git_run(git, repo, "add", "-A")
-        _git_run(git, repo, "commit", "-q", "-m", "two")
-
-        hooks = base_path / "hooks"
-        hooks.mkdir()
-        for hook in ("pre-commit", "post-commit", "reference-transaction", "post-index-change"):
-            (hooks / hook).write_text(f"#!/bin/sh\ntouch '{markers['hook'].as_posix()}'\n", encoding="utf-8")
-            (hooks / hook).chmod(0o755)
-        for key, value in (("filter.trap.clean", command("filter")), ("filter.trap.smudge", command("filter")),
-                           ("diff.external", command("diff")), ("core.fsmonitor", command("fsmonitor")),
-                           ("core.hooksPath", str(hooks))):
-            _git_run(git, repo, "config", key, value)
-
-        # CONTROL: with ordinary git, each of these traps fires on this machine.
-        raw = _clean_env()
-        subprocess.run([git, "hash-object", "a.md"], cwd=str(repo), env=raw, capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
-        subprocess.run([git, "log", "-p", "--ext-diff", "--no-color"], cwd=str(repo), env=raw, capture_output=True, timeout=60,
-                       stdin=subprocess.DEVNULL)
-        _git_run(git, repo, "commit", "-q", "--allow-empty", "-m", "control")
-        armed = [name for name, marker in markers.items() if marker.exists()]
+        trap = _write_tripwire(base_path / "trap.py")
+        # Two separate repositories with separate markers. The control makes ordinary git run the tripwires in ITS repository, and anything it
+        # leaves behind (a late process, a lingering write) can only ever reach ITS markers. The protected rollback gets a repository that
+        # ordinary git has never run in, and is judged by its own markers alone.
+        control = _hostile_repo(git, base_path / "control", trap, "CONTROL")
+        protected = _hostile_repo(git, base_path / "protected", trap, "PWNED")
+        armed = _run_control(git, control)
         if "filter" not in armed and "diff" not in armed:
             raise _Skip("could not make a hostile repository run a program here, so the protection is unproven")
-        for marker in markers.values():
-            marker.unlink(missing_ok=True)
+        repo, markers, original = protected.repo, protected.markers, _ORIGINAL
 
         ledger = Ledger(base_path / "ledger.db")
         scope = {"store": "selftest"}
@@ -438,7 +578,8 @@ def check_rollback_is_safe() -> str:
 
         ran = [name for name, marker in markers.items() if marker.exists()]
         if ran:
-            raise AssertionError("a program from the repository ran during the rollback: " + ", ".join(ran))
+            raise AssertionError("a program from the repository ran during the rollback: " + ", ".join(ran)
+                                 + ". What started it: " + _tripwire_report(markers, ran) + f". {_git_version_line(git)}. {_NOT_A_LEFTOVER}")
         if (repo / "a.md").read_bytes() != original:
             raise AssertionError("the original bytes (with their line endings) were not restored exactly")
         code, author = adapter.git.run_small(["log", "-1", "--format=%an"])

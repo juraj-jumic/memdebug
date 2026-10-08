@@ -14,6 +14,13 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   to run (`memdebug setup`). It only checks that folders exist, opens no file, and works even while the ledger is busy.
 - Cline is in the agent catalog: `memdebug agents` and `memdebug setup` offer its global rules folder (`~/Documents/Cline/Rules`) once it holds markdown rules.
 
+### Changed
+- `memdebug selftest`, "rollback is safe" and "hostile repository config cannot run programs": the control (ordinary git, tripwires armed) now runs in
+  a separate repository with its own marker files, so nothing it leaves behind can be mistaken for an escape from the protected run, which is still
+  asserted to run no tripwire. The tripwires now record what started them (time, arguments, and the parent and grandparent command lines where the
+  platform shows them: `/proc` on Linux, `ps` on macOS, nothing on Windows), and a failure prints those records and `git --version`. This follows a
+  failure on CI that passed on a re-run and could not be reproduced.
+
 ### Documentation
 - The README has badges, a recorded demo (`docs/demo.gif`, with the unpaced recording in `docs/demo.cast`), and new "Why this matters", "How it works" and
   "Engineering" sections, checked against the code. There is now a pull request template and a bug-report form that tells people never to paste
