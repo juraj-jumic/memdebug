@@ -82,7 +82,8 @@ def test_the_ignore_files_keep_private_data_and_clutter_out_of_the_repository(tm
     shutil.copy(ROOT / ".gitignore", tmp_path / ".gitignore")
     shutil.copy(ROOT / ".gitattributes", tmp_path / ".gitattributes")
     private = [".venv/lib/x.py", "webui-copy.db", "ledger.db", "ledger.db-wal", "stores.json", "copies/open-webui/webui.db", "memdebug-report.md", "copies/open-webui/notes.bin", "src/memdebug/__pycache__/notes.txt",
-               "src/memdebug/__pycache__/a.cpython-312.pyc", ".pytest_cache/v", "src/memdebug.egg-info/PKG-INFO", "dist/x.whl", ".env", "id.pem"]
+               "src/memdebug/__pycache__/a.cpython-312.pyc", ".pytest_cache/v", "src/memdebug.egg-info/PKG-INFO", "dist/x.whl", ".env", "id.pem",
+               "backups/notes/20261007-s1/files/a.md", "session.jsonl", "projects/-p1/abc.jsonl"]
     wanted = ["src/memdebug/cli.py", "tests/test_x.py", "docs/threat-model.md", "pyproject.toml", "LICENSE", "NOTICE", ".github/workflows/ci.yml", "README.md"]
     for name in private + wanted:
         target = tmp_path / name

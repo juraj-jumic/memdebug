@@ -118,7 +118,7 @@ def viewer(tmp_path):
 
 ALL_PAGES = ["/", "/timeline", "/timeline?event=e2", "/timeline?event=e3&op=EXTERNAL", "/timeline?trust=untrusted",
              "/snapshots", "/snapshot/s1", "/snapshot/s2", "/diff", "/diff?from=s1&to=s2", "/diff?from=s1&to=s2&full=1",
-             "/integrity", "/style.css"]
+             "/agents", "/integrity", "/style.css"]
 
 
 # -- who may talk to the server ------------------------------------------------------------------------------------

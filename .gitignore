@@ -26,7 +26,11 @@ htmlcov/
 *.partial
 stores.json
 copies/
+backups/
 memdebug-report*
+# Rollback backups hold the notes byte for byte, and agent session logs are whole conversations. If a test ever needs a made-up .jsonl file,
+# add a negation for that one path (!tests/data/example.jsonl) instead of removing the rule.
+*.jsonl
 
 # Secrets
 .env

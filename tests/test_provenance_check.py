@@ -24,7 +24,7 @@ def stamp(moment):
 
 
 def logged_write(path, tool="Write", later=0, **more):
-    """A fabricated log, in the (empty, per-test) home folder, with one edit call made just now (or `later` seconds from now)."""
+    """A fabricated log, in the (empty, per-test) home folder, with one edit call made at the time the test runs (or `later` seconds after it)."""
     time.sleep(0.05)
     now = datetime.now(timezone.utc)
     make_log(Path.home(), [call(tool, at=stamp(now + timedelta(seconds=later)), file_path=str(path), **more)], mtime=now + timedelta(seconds=later))
