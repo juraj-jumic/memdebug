@@ -14,6 +14,11 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   to run (`memdebug setup`). It only checks that folders exist, opens no file, and works even while the ledger is busy.
 - Cline is in the agent catalog: `memdebug agents` and `memdebug setup` offer its global rules folder (`~/Documents/Cline/Rules`) once it holds markdown rules.
 
+### Documentation
+- The README has badges, a recorded demo (`docs/demo.gif`, with the unpaced recording in `docs/demo.cast`), and new "Why this matters", "How it works" and
+  "Engineering" sections, checked against the code. There is now a pull request template and a bug-report form that tells people never to paste
+  memory contents or session transcripts. CONTRIBUTING's second ground rule now names both rollback engines.
+
 ## [0.3.0] - 2026-10-07
 
 ### Added

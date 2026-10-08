@@ -1,0 +1,87 @@
+name: Bug report
+description: Something does not work as the documentation says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Please read this first
+
+        **Never paste memory contents or session transcripts into this issue.** An agent's memory and its conversation logs hold private text,
+        and an issue is public and stays public even if you edit or delete it. Describe what the text *did*, or replace it with a made-up
+        example that behaves the same way.
+
+        Also leave out: the ledger (`*.db`), `stores.json`, backup folders, the link printed by `memdebug serve` (it contains a secret),
+        API keys, and personal paths (replace them with `<home>`). Be careful with the output of `memdebug check`, `timeline`, `diff` and
+        `report`: it can quote the start of changed notes.
+
+        **A security problem?** Do not open an issue. Report it privately: https://github.com/juraj-jumic/memdebug/security/advisories/new
+        (see [SECURITY.md](https://github.com/juraj-jumic/memdebug/blob/main/SECURITY.md)).
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Before you submit
+      options:
+        - label: I have not included memory contents, session transcripts, a ledger, `stores.json`, a viewer link or personal paths.
+          required: true
+        - label: This is not a security problem.
+          required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you did, and what memdebug did.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The commands you ran, ideally against a made-up folder of notes. `memdebug demo` shows what a healthy run looks like.
+  - type: input
+    id: version
+    attributes:
+      label: memdebug version
+      description: The output of `memdebug --version`. If you use pipx and a virtual environment, make sure it is the copy you actually ran.
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: Python and git versions
+      description: The output of `python --version` and `git --version`.
+  - type: dropdown
+    id: store
+    attributes:
+      label: Kind of store involved
+      multiple: true
+      options:
+        - Markdown notes in git
+        - Plain folder of markdown notes
+        - Open WebUI
+        - Mem0
+        - The viewer (memdebug serve)
+        - Not about a store
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or error message
+      description: Only text you have read through and are sure holds no memory contents. The output of `memdebug selftest` is useful here, but it names your user folder on Windows, so replace that with `<home>` first.
+      render: text

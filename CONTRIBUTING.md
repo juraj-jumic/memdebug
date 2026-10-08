@@ -16,8 +16,10 @@ You need Python 3.10+ and git 2.31+. The suite starts many git processes, so it 
 
 1. **Everything read from a memory store or repository is untrusted.** Bound its size, never print it raw (use
    `safe_text`), and never let it become markup (use the viewer's builder, never string-built HTML).
-2. **Adapters only read.** The one component allowed to change a memory store is `adapters/restore.py`, and it has its
-   own rules: dry run first, exact bytes, a backup of anything git does not hold, no rewritten history, undo on failure.
+2. **Adapters only read.** The only code allowed to change a memory store is the two rollback engines, `adapters/restore.py` (git
+   notes) and `adapters/folder_restore.py` (plain folders), which share the file-writing code in `adapters/fileops.py`. They have their
+   own rules: a dry run first, a plan the person confirms, a backup of anything not already held (in git, or in a private backup folder),
+   no rewritten history, undo on failure.
 3. **No shell, fixed argument lists, no programs named by the data.** git runs with a scrubbed environment and the
    repository's risky settings overridden. Do not add a git command without checking it cannot run a hook, filter or
    external helper.
