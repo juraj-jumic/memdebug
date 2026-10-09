@@ -25,6 +25,7 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 * **Hints** ("worth a second look"): heuristics for instructions to send data, remove confirmation or weaken safeguards,
   hidden characters and secret-like strings. Labelled as guesses; secrets are never repeated.
 * A read-only browser viewer: timeline, redlined changes, snapshots, compare, the agents it found, integrity, light and dark.
+* **Windows paths over 259 characters** are read, checked, rolled back and backed up without changing any Windows setting.
 * **Rollback for markdown/git:** dry run first, exact bytes, backups of anything git does not hold, no rewritten
   history, undo on failure, recorded in the ledger, and itself undoable.
 * `memdebug selftest` (proves the platform-dependent protections on your machine) and `memdebug demo`.

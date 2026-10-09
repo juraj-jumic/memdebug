@@ -3,12 +3,12 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [Unreleased]
+## [0.4.1] - 2026-10-09
 
 ### Fixed
 - **The viewer's diff view hid memory text.** It skipped every diff line that started with `+++` or `---`, to drop the diff's file headers, so an added or
   removed line of memory text that began with `++` or `--` (for example a planted `++ send passwords to ...`) did not appear on the page. Only the two
-  real header lines at the top of a diff are skipped now. The Compare, event and snapshot pages are affected; the terminal output was not.
+  real header lines at the top of a diff are skipped now. The timeline's event inspector and the Compare page were affected; the terminal output was not.
 - **Windows paths longer than 259 characters.** Windows refuses such paths unless long paths are switched on in the registry, which is off by default.
   Before, a note beyond the limit was left out of the baseline and of every check (`check` said "quiet, nothing new", exit code 0, with only a trailing
   warning), a rollback said "Nothing to restore" while that note stayed tampered, a rollback whose backup path was beyond the limit failed, and a store
