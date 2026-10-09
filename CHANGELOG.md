@@ -5,6 +5,12 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## [Unreleased]
 
+### Added
+- **Double-clicking the stand-alone Windows program now explains itself.** Before, it printed its help and exited, so the console window opened and closed
+  at once and nobody could read anything. Now, opened by double-click (a stand-alone build on Windows, no arguments, a console of its own, nothing redirected),
+  it says that memdebug is a command-line program, shows three commands to type in PowerShell with the real file name, and waits for Enter. Started from a
+  terminal, or with any argument, it behaves as before. The release smoke test starts the program like that on Windows and fails if it exits at once.
+
 ### Documentation
 - The Windows notes now describe the SmartScreen warning as it appears for a browser download of the stand-alone program ("Run anyway" / "Don't run" at
   once, publisher "Unknown publisher"), and say how to check the file first.

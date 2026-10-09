@@ -12,6 +12,8 @@ it cannot prove (for example symlinks need Developer Mode).
   log path. A git repository in a very deeply nested folder can still hit git's own limits.
 - Directory junctions and symlinks are never followed, including by rollback. A hung git is stopped with `taskkill /T`.
 - Ledger file permissions are not enforced by this tool on Windows; the default location is private to your user account.
+- Double-clicking the stand-alone program opens a console window that explains it is a command-line tool and waits for Enter; use it from PowerShell
+  (`.\memdebug-windows-x64.exe demo`).
 - The stand-alone `memdebug-windows-x64.exe` from the GitHub release is not signed, so a copy downloaded in a browser makes Windows show "Windows protected
   your PC" (Microsoft Defender SmartScreen, publisher "Unknown publisher") the first time you start it. Check the file against `SHA256SUMS` first
   (`Get-FileHash .\memdebug-windows-x64.exe`), and `gh attestation verify .\memdebug-windows-x64.exe --repo juraj-jumic/memdebug` if you have the GitHub

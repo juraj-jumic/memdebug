@@ -41,7 +41,8 @@ proposes new versions of the upload and download actions) so a problem shows up 
 
 Besides the PyPI package, each release carries a program for Windows (x64), Linux (x64) and macOS (arm64) that needs no Python. They are built with
 PyInstaller from `packaging/entry.py` by the `standalone` job of `release.yml` (and, to notice breakage early, of `ci.yml` on every push) and smoke-tested
-by `packaging/check_standalone.py`, which fails unless `--version`, `demo` and every protection `selftest` can prove here are right. A build that does not
+by `packaging/check_standalone.py`, which fails unless `--version`, `demo` and every protection `selftest` can prove here are right (and, on Windows, unless the
+program stays open when started with no arguments on a console of its own, as a double-click does; the check uses a console with no window, so none flashes up). A build that does not
 pass stops the release before PyPI sees anything (`publish` needs `standalone`).
 
 After PyPI has the release, the `github-release` job (only for a version tag, and the only job that can write to the repository) attaches the three

@@ -6,7 +6,9 @@ folder, and fails unless:
 * `--version` prints the version of the package installed in the Python that runs this script,
 * `demo` finishes with exit code 0, and
 * `selftest` exits 0 and every protection it can prove here is PASS, not SKIP. A stand-alone build once SKIPped the tripwire checks and passed the
-  stalled-process check for nothing, so these names are required to PASS.
+  stalled-process check for nothing, so these names are required to PASS, and
+* on Windows, started with no arguments on a console of its own (what a double-click gives), it stays open and waits instead of printing its help
+  and closing at once.
 """
 from __future__ import annotations
 
@@ -15,6 +17,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+DOUBLE_CLICK_WAIT = 5.0  # seconds a program started like a double-click must still be open after
 
 REQUIRED = (
     "git ignores global config",
@@ -32,6 +36,23 @@ REQUIRED = (
 def run(program: str, *args: str, folder: str, timeout: int = 600) -> subprocess.CompletedProcess[str]:
     """Run the program with these arguments in `folder` and return what it printed."""
     return subprocess.run([program, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=folder, timeout=timeout)
+
+
+def double_click_problem(program: str, folder: str, wait: float) -> str | None:
+    """Windows only: start the program with no arguments on a console of its own, as a double-click does (but with no window shown).
+
+    Returns:
+        What is wrong, or None if the program stayed open (it is waiting for Enter, which is what a person needs in order to read its message).
+    """
+    proc = subprocess.Popen([program], cwd=folder, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))  # a console of its own, with no window to flash up
+    try:
+        try:
+            proc.wait(timeout=wait)
+        except subprocess.TimeoutExpired:
+            return None
+        return f"opened on a console of its own it exited at once (code {proc.returncode}), so a double-click would flash and vanish"
+    finally:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)  # the program and the process it started
 
 
 def main(program: str) -> int:
@@ -62,6 +83,11 @@ def main(program: str) -> int:
         for name in REQUIRED:
             if results.get(name) != "PASS":
                 problems.append(f"selftest check '{name}' is {results.get(name, 'missing')}, not PASS")
+        if platform.system() == "Windows":
+            problem = double_click_problem(program, folder, DOUBLE_CLICK_WAIT)
+            print(f"double-click: {'stays open, as it should' if problem is None else problem}")
+            if problem is not None:
+                problems.append(problem)
     for problem in problems:
         print(f"FAIL: {problem}", file=sys.stderr)
     print("stand-alone build OK" if not problems else f"{len(problems)} problem(s)")
