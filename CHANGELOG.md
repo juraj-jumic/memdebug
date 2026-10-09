@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-09
 
 ### Added
 - **Who wrote it.** For a changed note that looks suspicious, or that changed outside git, `memdebug check` and `memdebug watch` now also say which
@@ -20,11 +20,16 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   asserted to run no tripwire. The tripwires now record what started them (time, arguments, and the parent and grandparent command lines where the
   platform shows them: `/proc` on Linux, `ps` on macOS, nothing on Windows), and a failure prints those records and `git --version`. This follows a
   failure on CI that passed on a re-run and could not be reproduced.
+- The repository's ignore file also excludes `backups/` and `*.jsonl` (session logs), and the release hygiene test checks both rules.
 
 ### Documentation
 - The README has badges, a recorded demo (`docs/demo.gif`, with the unpaced recording in `docs/demo.cast`), and new "Why this matters", "How it works" and
-  "Engineering" sections, checked against the code. There is now a pull request template and a bug-report form that tells people never to paste
-  memory contents or session transcripts. CONTRIBUTING's second ground rule now names both rollback engines.
+  "Engineering" sections, checked against the code; claims about snapshots, the ledger and rollback that overstated what the code does were corrected.
+- CONTRIBUTING.md now starts with the private-data rule and covers reporting a security problem, setup, writing tests, changing the viewer and the pull
+  request process; its second ground rule names both rollback engines. There is a pull request template and a bug-report form that tells people never
+  to paste memory contents or session transcripts.
+- `docs/threat-model.md` has a section on the session-log reader, and `docs/agents.md` has a row for Cline and records Claude Code's per-project memory
+  folder as confirmed on Windows 11.
 
 ## [0.3.0] - 2026-10-07
 

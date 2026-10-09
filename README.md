@@ -23,7 +23,7 @@ computer. It does not block attacks as they happen (run it next to runtime guard
 behind a flagged change, as evidence and never as proof; for any other agent it cannot say *which conversation* wrote a memory. See
 [docs/threat-model.md](docs/threat-model.md) for exactly what it does and does not do.
 
-> **Status: alpha (0.3).** The parts described here work. The tests run on every push on Linux, Windows and macOS (Python 3.10, 3.12 and 3.14), and
+> **Status: alpha (0.4).** The parts described here work. The tests run on every push on Linux, Windows and macOS (Python 3.10, 3.12 and 3.14), and
 > the author also runs them on Windows 11, but expect rough edges. [ROADMAP.md](ROADMAP.md) lists what is built and what is next.
 
 ## Why this matters
