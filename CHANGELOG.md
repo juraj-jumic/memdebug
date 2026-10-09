@@ -3,6 +3,12 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Documentation
+- The Windows notes now describe the SmartScreen warning as it appears for a browser download of the stand-alone program ("Run anyway" / "Don't run" at
+  once, publisher "Unknown publisher"), and say how to check the file first.
+
 ## [0.6.0] - 2026-10-09
 
 ### Added

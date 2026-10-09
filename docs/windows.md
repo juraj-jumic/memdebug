@@ -12,7 +12,10 @@ it cannot prove (for example symlinks need Developer Mode).
   log path. A git repository in a very deeply nested folder can still hit git's own limits.
 - Directory junctions and symlinks are never followed, including by rollback. A hung git is stopped with `taskkill /T`.
 - Ledger file permissions are not enforced by this tool on Windows; the default location is private to your user account.
-- The stand-alone `memdebug-windows-x64.exe` from the GitHub release is not signed, so SmartScreen may say "Windows protected your PC" the first time:
-  choose "More info", then "Run anyway", once you have checked the file against `SHA256SUMS` (`Get-FileHash .\memdebug-windows-x64.exe`).
+- The stand-alone `memdebug-windows-x64.exe` from the GitHub release is not signed, so a copy downloaded in a browser makes Windows show "Windows protected
+  your PC" (Microsoft Defender SmartScreen, publisher "Unknown publisher") the first time you start it. Check the file against `SHA256SUMS` first
+  (`Get-FileHash .\memdebug-windows-x64.exe`), and `gh attestation verify .\memdebug-windows-x64.exe --repo juraj-jumic/memdebug` if you have the GitHub
+  CLI; then choose "Run anyway" (some Windows versions first show a "More info" link that reveals that button). Choose "Don't run" if the checksum differs.
+  The warning is about the missing signature, not about what the program does. (A copy fetched with `gh release download` started here without it.)
 - If git reports "dubious ownership" for a repository on another drive, fix the ownership; this tool deliberately ignores your
   global `safe.directory` setting.
