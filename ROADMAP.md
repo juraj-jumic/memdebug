@@ -17,7 +17,7 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 * Detection of changes that bypassed a store's own history, with false-alarm guards.
 * **Reports** in Markdown, JSON and SARIF, with CI exit codes.
 * **Rollback for plain folders** (`memdebug rollback store`, and `memdebug snapshot store` to save a known-good copy first), rebuilt from the snapshot's
-  text with backups of anything replaced; Open WebUI and Mem0 still cannot be rolled back.
+  text with backups of anything replaced, which `memdebug backups list` and `clean` show and tidy; Open WebUI and Mem0 still cannot be rolled back.
 * **Published on PyPI** as `memdebug` (`pip install memdebug`), released by a tag-triggered workflow that needs an approval click.
 * **A first slice of provenance for Open WebUI:** its own `created_by` label and a chat-timing comparison, as evidence only.
 * **Who wrote it, for Claude Code:** `check` and `watch` name the logged Claude Code session whose Write or Edit call changed a flagged note, from its
@@ -33,7 +33,7 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 
 ## Next, roughly in this order
 
-1. **Rollback for plain folders: built** (see Built). Still to do: a way to list and clean up old backups, and trying it on real agent memory folders.
+1. **Rollback for plain folders: built** (see Built). Still to do: trying it on real agent memory folders.
 2. **More provenance.** First slices exist for Open WebUI (the app's own label and how close a chat was) and for Claude Code (which logged Write or Edit
    call wrote a flagged note). Still to do: which conversation turn wrote a memory and what the assistant had just read, showing it in the viewer
    (which would have to read `stores.json`), and readers for other agents' session logs (OpenClaw).

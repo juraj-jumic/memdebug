@@ -62,6 +62,21 @@ text. Then run `memdebug selftest` once on any new machine: it proves the platfo
 Keeping `watch` running: on Windows, create a shortcut to `memdebug watch` in the Startup folder; on Linux or macOS use a systemd
 user service or a login item. memdebug does not install anything that starts by itself.
 
+## Cleaning up old backups
+
+A rollback of a plain folder saves what it replaced in `backups` next to the ledger, and these copies pile up. They hold your memory text, so
+remove them when you no longer need them:
+
+    memdebug backups list                                  # every backup, newest first, with its size and age
+    memdebug backups clean --older-than 30                 # a dry run: shows what would be removed, removes nothing
+    memdebug backups clean --keep 3 --older-than 30 --apply   # does it, after you confirm (add --yes to skip the question)
+
+You must say which backups: `--older-than DAYS`, `--keep N` (the newest N of each store are never chosen), or `--all`; `--store NAME` limits it
+to one store. A backup is chosen only if it meets every condition you give. Only folders shaped exactly like a rollback's are ever listed or
+removed, anything else in the folder is reported and left alone, and a backup that holds a link is never removed. The age is read from the
+backup's name. A removed backup cannot be brought back. Git notes keep their backups inside the repository, under `refs/memdebug/backups/`; these
+commands do not touch those.
+
 ## The viewer
 
 `memdebug serve` starts a read-only web page (timeline with an inspector, snapshots, compare, the agents it

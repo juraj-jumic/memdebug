@@ -134,7 +134,8 @@ junctions, case clashes, atomic writes and the undo journal are identical. What 
 | The folder changing between the plan and the write | Applying re-plans and refuses if the plan differs; every target is re-checked before the first backup or write. |
 | A snapshot (or a tampered ledger) naming unsafe files | Names are validated by the same rule as the reader (no `..`, absolute, device or case-clashing names), and files outside the store's subfolder, or outside a named-files store, are never written. |
 
-Known limits: backups hold your memory text and are never deleted by memdebug; a plain-folder rollback cannot restore exact bytes for files whose
+Known limits: backups hold your memory text and are deleted only when you run `memdebug backups clean --apply` (it removes only folders shaped
+exactly like a rollback's, inside the backup folder, never follows a link, and leaves a backup that holds one alone); a plain-folder rollback cannot restore exact bytes for files whose
 line endings were mixed; a store with no history cannot show an outside-history bypass, only the changes observed between looks. The Windows
 permissions of the backup folder are those of your user profile (memdebug sets no ACL), and the junction guard is exercised on every platform by
 simulation, but real junctions are only tested on Windows runs of the suite.

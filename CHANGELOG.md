@@ -5,6 +5,12 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## [Unreleased]
 
+### Added
+- **`memdebug backups list` and `memdebug backups clean`.** The backups a plain-folder rollback leaves next to the ledger piled up with no way to
+  tidy them. `list` shows each with its size and age. `clean` removes the ones you choose (`--older-than DAYS`, `--keep N` per store, `--store NAME`, or
+  `--all`), as a dry run unless you add `--apply` and confirm. It only touches folders shaped exactly like a rollback's, never follows a link or
+  junction, leaves a backup that holds a link alone, and reads the age from the folder's name. Backups beyond Windows' 259-character path limit work.
+
 ### Documentation
 - The README is now a short introduction (install, demo, watching your own agent, rolling back). The long parts moved, unchanged, to `docs/usage.md`, `docs/rollback.md`, `docs/how-it-works.md` and `docs/windows.md`.
 

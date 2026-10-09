@@ -202,6 +202,25 @@ def test_a_backup_beyond_the_limit_is_written_so_the_rollback_works(tmp_path, de
 
 
 @windows_only
+def test_a_backup_beyond_the_limit_is_listed_and_removed_by_the_backups_commands(tmp_path, default_windows_path_limit):
+    root = tmp_path / "notes"
+    name = "w" * (250 - (len(str(root)) + 1) - len("\\n.md"))
+    note = root / name / "n.md"
+    write_long(note, "likes tea\n")
+    db = tmp_path / "db" / "l.db"
+    db.parent.mkdir()
+    assert cli_run(db, "add", str(root), "--name", "lp").exit_code == 0
+    write_long(note, PLANTED)
+    assert cli_run(db, "rollback", "store", "lp", "--to", "s1", "--apply", "--yes").exit_code == 0
+    assert any(len(f) > 259 for f in files_under(db.parent / "backups"))
+    listed = cli_run(db, "backups", "list")
+    assert listed.exit_code == 0 and "1 backup(s)" in listed.output and " 1 " in listed.output  # one saved note, seen although its path is too long
+    removed = cli_run(db, "backups", "clean", "--all", "--apply", "--yes")
+    assert removed.exit_code == 0 and "Removed 1 backup(s)." in removed.output, removed.output
+    assert files_under(db.parent / "backups") == [] and read_long(note) == "likes tea\n"
+
+
+@windows_only
 def test_a_store_whose_own_folder_is_beyond_the_limit_can_be_added_and_watched(tmp_path, default_windows_path_limit):
     root = tmp_path / ("r" * 230)
     note = root / "n.md"

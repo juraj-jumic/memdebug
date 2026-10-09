@@ -25,6 +25,8 @@ from .adapters.openwebui import OpenWebUIAdapter
 from .adapters.restore import Plan, Restorer
 from .agents import scan_agents
 from .agents import summary_lines as agent_lines
+from .backups import Backup, BackupError, list_backups, select
+from .backups import remove as remove_backup
 from .describe import describe_event
 from .diff import Diff, diff_snapshots, line_diff
 from .docker_source import valid_container
@@ -656,6 +658,107 @@ def rollback_store(
     _rollback_command(opened.adapter, opened.scope, restorer, ledger, snapshot, only=list(only or []), remove_added=remove_added, full=full,
                       apply=apply, yes=yes, settle=settle, undo_command=f"memdebug rollback store {cfg.name} --to {{id}} --apply",
                       record_command="memdebug check")
+
+
+# -- backups ------------------------------------------------------------------------------------------------
+
+backups_app = typer.Typer(
+    help="List and remove the backups that rollbacks of plain folders leave next to the ledger. Nothing is removed without --apply.",
+    no_args_is_help=True,
+)
+app.add_typer(backups_app, name="backups")
+
+
+def _size_text(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{int(value)} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} B"  # unreachable; satisfies the type checker
+
+
+def _age_text(created: datetime, now: datetime) -> str:
+    days = (now - created).days
+    return "today" if days < 1 else f"{days} day(s) ago"
+
+
+def _print_backups(backups: list[Backup], now: datetime) -> None:
+    echo(f"  {'store':<20} {'made (UTC)':<17} {'files':>5} {'size':>9}  age")
+    for b in backups:
+        flag = "  (holds a link: never removed)" if b.has_link else ""
+        echo(f"  {safe_text(b.store, 20):<20} {b.created:%Y-%m-%d %H:%M}   {b.files:>5} {_size_text(b.size):>9}  {_age_text(b.created, now)}{flag}")
+
+
+@backups_app.command("list")
+@guarded
+def backups_list(db: Path = DB_OPTION) -> None:
+    """Show the backups of plain-folder rollbacks, newest first, with their size and age. Changes nothing."""
+    root = backup_root_for(db or default_ledger_path())
+    listing = list_backups(root)
+    if not listing.backups:
+        echo(f"No backups in {safe_text(root, 200)}.")
+    else:
+        _print_backups(listing.backups, datetime.now(timezone.utc))
+        echo(f"\n{len(listing.backups)} backup(s), {_size_text(sum(b.size for b in listing.backups))}, in {safe_text(root, 200)}")
+    if listing.ignored:
+        echo(f"{listing.ignored} other entr{'y' if listing.ignored == 1 else 'ies'} in that folder are not backups and are left alone.")
+    echo("These copies hold your memory text. Git rollbacks keep theirs inside the repository, under refs/memdebug/backups/; this does not touch those.")
+
+
+@backups_app.command("clean")
+@guarded
+def backups_clean(
+    db: Path = DB_OPTION,
+    older_than: Optional[int] = typer.Option(None, "--older-than", min=0, help="Only backups made more than this many days ago."),
+    keep: Optional[int] = typer.Option(None, "--keep", min=0, help="Never remove the newest N backups of each store."),
+    store: Optional[str] = typer.Option(None, "--store", help="Only the backups of this store."),
+    everything: bool = typer.Option(False, "--all", help="Every backup (of the store, if --store is given). Not combined with the other conditions."),
+    apply: bool = typer.Option(False, "--apply", help="Do it. Without this, nothing is removed."),
+    yes: bool = typer.Option(False, "--yes", help="Do not ask for confirmation (needed when not at a keyboard)."),
+) -> None:
+    """Remove old backups of plain-folder rollbacks, once you are sure you no longer need them.
+
+    You must say which: --older-than DAYS, --keep N, or --all. A backup that meets every condition you give is chosen. Shows the list
+    first; nothing is removed without --apply. A removed backup cannot be brought back.
+    """
+    if older_than is None and keep is None and not everything:
+        raise MemdebugError("say which backups: --older-than DAYS, --keep N (per store), or --all. 'memdebug backups list' shows what there is")
+    root = backup_root_for(db or default_ledger_path())
+    now = datetime.now(timezone.utc)
+    listing = list_backups(root)
+    chosen = select(listing.backups, now=now, older_than_days=older_than, keep=keep, store=store, everything=everything)
+    removable = [b for b in chosen if not b.has_link]
+    if not chosen:
+        echo("Nothing matches. Nothing was removed.")
+        return
+    echo("Would remove:" if not apply else "Removing:")
+    _print_backups(chosen, now)
+    skipped = len(chosen) - len(removable)
+    if skipped:
+        echo(f"\n{skipped} of them hold a link and are left alone.")
+    echo(f"\n{len(removable)} backup(s), {_size_text(sum(b.size for b in removable))}. A removed backup cannot be brought back.")
+    if not apply:
+        echo("\nDry run: nothing was removed. Add --apply to do it.")
+        return
+    if not removable:
+        return
+    if not yes:
+        if not (os.isatty(0) and os.isatty(1)):
+            raise MemdebugError("not at a keyboard: pass --yes to confirm, or run it from a terminal")
+        typer.confirm(f"\nRemove {len(removable)} backup(s)?", abort=True)
+    done = 0
+    failures = 0
+    for b in removable:
+        try:
+            remove_backup(root, b)
+            done += 1
+        except BackupError as exc:
+            failures += 1
+            echo(f"error: {safe_text(b.store, 20)}/{safe_text(b.name, 30)}: {safe_text(exc, 300)}", err=True)
+    echo(f"\nRemoved {done} backup(s).")
+    if failures:
+        raise typer.Exit(1)
 
 
 @app.command("demo")

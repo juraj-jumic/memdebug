@@ -22,8 +22,8 @@ For a **plain folder** there is no git to take exact file versions from, so it w
 
 * **Backups are files.** Anything the rollback would replace or remove is first copied, byte for byte, into a private folder next to your ledger
   (`backups\<store>\<date>-<id>`, with a `manifest.json`), and each copy is read back and checked before your notes are touched. Get a file
-  back by copying it out of that folder's `files` folder. These copies contain your memory text and memdebug never deletes them: delete old ones
-  yourself when you no longer need them.
+  back by copying it out of that folder's `files` folder. These copies contain your memory text and memdebug never deletes them by itself. `memdebug backups list` shows them with
+  their size and age, and `memdebug backups clean` removes the ones you choose (see [usage.md](usage.md#cleaning-up-old-backups)).
 * **Line endings.** A snapshot does not keep them. Files come back as UTF-8 with LF line endings, or with CRLF if the file being replaced uses CRLF
   throughout. A file with mixed endings comes back with LF.
 * **Nothing it cannot restore faithfully is written.** Text that was cut, marked too large, or had bytes that are not valid text is skipped, and
