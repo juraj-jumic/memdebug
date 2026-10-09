@@ -298,18 +298,25 @@ def test_the_config_control_and_protected_repositories_share_nothing(tmp_path):
     trap = st._write_tripwire(tmp_path / "trap.py")
     control = st._config_trap_repo(git, tmp_path / "control", trap, "CONTROL")
     protected = st._config_trap_repo(git, tmp_path / "protected", trap, "PWNED")
-    assert control.repo != protected.repo and control.markers["config"] != protected.markers["config"]
+    assert control.repo != protected.repo and set(control.markers) == set(protected.markers) == set(st.CONFIG_TRIPS)
+    assert not set(control.markers.values()) & set(protected.markers.values())
     control_config = (control.repo / ".git" / "config").read_text(encoding="utf-8")
     protected_config = (protected.repo / ".git" / "config").read_text(encoding="utf-8")
-    assert "CONTROL-config" in control_config and "PWNED-config" not in control_config
-    assert "PWNED-config" in protected_config and "CONTROL-config" not in protected_config
-    assert not control.markers["config"].exists() and not protected.markers["config"].exists()
+    assert "CONTROL-diff" in control_config and "PWNED-" not in control_config
+    assert "PWNED-diff" in protected_config and "CONTROL-" not in protected_config
+    assert not any(m.exists() for m in [*control.markers.values(), *protected.markers.values()])
+
+
+@needs_git
+def test_the_check_passes_and_says_which_settings_the_control_proved():
+    message = run_check(st.check_hostile_repo_config_cannot_run_programs)
+    assert message.startswith(CONFIG_OK) and "control: ordinary git ran the" in message and message.endswith("memdebug's git did not")
 
 
 @needs_git
 def test_a_late_leftover_from_the_config_control_cannot_fail_the_protected_run(monkeypatch):
     with_late_leftover(monkeypatch, "_run_config_control")
-    assert run_check(st.check_hostile_repo_config_cannot_run_programs) == CONFIG_OK
+    assert run_check(st.check_hostile_repo_config_cannot_run_programs).startswith(CONFIG_OK)
 
 
 @needs_git
@@ -335,6 +342,57 @@ def test_a_program_run_by_the_history_reader_is_still_caught_and_explained(monke
     with pytest.raises(AssertionError) as caught:
         run_check(st.check_hostile_repo_config_cannot_run_programs)
     message = str(caught.value)
-    assert message.startswith("a program named in the repository's config was executed. What started it: [config]")
-    assert '"time": "' in message and '"args": ["config"' in message and '"cwd"' in message
+    assert message.startswith("a program named in the repository's config was executed. What started it: [diff]")
+    assert '"time": "' in message and '"args": ["diff"' in message and '"cwd"' in message
     assert "git --version: " in message and "not a leftover from it" in message
+
+
+def without_fsmonitor_protection(monkeypatch):
+    """Break the protection on purpose: the wrapper no longer switches the file system monitor off."""
+    real = mg._Git._command
+
+    def command(self, args):
+        built = real(self, args)
+        at = built.index("core.fsmonitor=false")
+        return built[:at - 1] + built[at + 1:]  # drop the "-c" and its value
+
+    monkeypatch.setattr(mg._Git, "_command", command)
+
+
+@needs_git
+def test_losing_the_fsmonitor_protection_is_caught_and_explained(monkeypatch):
+    without_fsmonitor_protection(monkeypatch)
+    with pytest.raises(AssertionError) as caught:
+        run_check(st.check_hostile_repo_config_cannot_run_programs)
+    message = str(caught.value)
+    assert message.startswith("a program named in the repository's config was executed. What started it: [fsmonitor]")
+    assert '"args": ["fsmonitor"' in message and "git --version: " in message
+
+
+@needs_git
+def test_the_old_check_would_not_have_noticed_that_loss(monkeypatch, tmp_path):
+    """Why the check now asks for a status and a patch: reading history, files and objects alone never makes git consult the file system monitor,
+    so with the protection gone the reads of the old check still left no marker."""
+    git = st._need_git()
+    trap = st._write_tripwire(tmp_path / "trap.py")
+    protected = st._config_trap_repo(git, tmp_path / "protected", trap, "PWNED")
+    without_fsmonitor_protection(monkeypatch)
+    adapter = mg.MarkdownGitAdapter(protected.repo, store="selftest")
+    adapter.read_history(100)
+    adapter.history("a.md")
+    adapter.list_memories({"store": "selftest"})
+    assert not any(marker.exists() for marker in protected.markers.values())
+
+
+@needs_git
+def test_without_a_control_that_fires_the_check_says_skip_never_pass(monkeypatch):
+    monkeypatch.setattr(st, "_run_config_control", lambda git, hostile: [])
+    with pytest.raises(st._SkipError, match="protection is unproven"):
+        st.check_hostile_repo_config_cannot_run_programs()
+
+
+@needs_git
+def test_a_control_that_only_fired_the_pager_or_editor_settings_proves_nothing(monkeypatch):
+    monkeypatch.setattr(st, "_run_config_control", lambda git, hostile: ["other"])
+    with pytest.raises(st._SkipError, match="protection is unproven"):
+        st.check_hostile_repo_config_cannot_run_programs()

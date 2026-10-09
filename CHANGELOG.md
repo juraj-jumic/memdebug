@@ -11,6 +11,13 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   `--all`), as a dry run unless you add `--apply` and confirm. It only touches folders shaped exactly like a rollback's, never follows a link or
   junction, leaves a backup that holds a link alone, and reads the age from the folder's name. Backups beyond Windows' 259-character path limit work.
 
+### Changed
+- `memdebug selftest`, "hostile repository config cannot run programs", now means more. It only read history, which never makes git run a configured
+  program, so it could pass without testing the protection. Its control now makes ordinary git run the external-diff and file-system-monitor settings
+  (a `git status` and a patch with the external diff allowed), says which it managed, and the protected phase asks memdebug's own git wrapper for the same
+  two things. Removing the file-system-monitor protection from memdebug's git settings now fails this check, as it should, and the check still says SKIP when
+  the control cannot fire.
+
 ### Documentation
 - The README is now a short introduction (install, demo, watching your own agent, rolling back). The long parts moved, unchanged, to `docs/usage.md`, `docs/rollback.md`, `docs/how-it-works.md` and `docs/windows.md`.
 

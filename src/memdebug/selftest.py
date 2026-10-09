@@ -105,52 +105,69 @@ def check_git_ignores_global_config() -> str:
     return "a global git config pointed at by HOME is not read"
 
 
+CONFIG_TRIPS = ("diff", "fsmonitor", "other")  # one marker for each way the settings below can make git run a program
+
+
 def _config_trap_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
     """Build a repository whose config names the tripwire for every setting that makes git run a program.
 
     Those settings are the ones git uses when it shows a diff, pages output, checks the file system or opens an
-    editor. There is one marker, `<prefix>-config`. (The tripwire and its helpers are defined further down, with
-    the rollback check.)
+    editor. The external diff and the file system monitor each get a marker of their own, `<prefix>-diff` and
+    `<prefix>-fsmonitor`, so the control can say which of them it really made fire here; the pager and editor
+    settings share `<prefix>-other`. (The tripwire and its helpers are defined further down, with the rollback check.)
 
     Args:
         git: Path of the git executable.
         root: A new folder to create; the repository goes in `root/repo`.
         trap: The tripwire script that every configured program points at.
-        prefix: Names the marker file, so repositories made with different prefixes never share one.
-        markers_dir: Where the marker goes; `root` when omitted.
+        prefix: Names the markers, so repositories made with different prefixes never share one.
+        markers_dir: Where the markers go; `root` when omitted.
 
     Returns:
-        The repository and its marker.
+        The repository and its markers, keyed by the name in CONFIG_TRIPS.
     """
     root.mkdir(parents=True)
     repo = root / "repo"
     repo.mkdir()
-    marker = (markers_dir or root) / f"{prefix}-config"
-    command = f'"{Path(sys.executable).as_posix()}" "{trap.as_posix()}" "{marker.as_posix()}" config'
+    markers = {name: (markers_dir or root) / f"{prefix}-{name}" for name in CONFIG_TRIPS}
+
+    def command(name: str) -> str:
+        return f'"{Path(sys.executable).as_posix()}" "{trap.as_posix()}" "{markers[name].as_posix()}" {name}'
+
     _git_run(git, repo, "init", "-q", "-b", "main")
     for version in ("one", "two"):
         (repo / "a.md").write_text(version + "\n", encoding="utf-8")
         _git_run(git, repo, "add", "-A")
         _git_run(git, repo, "commit", "-q", "-m", version)
-    for key in ("diff.external", "core.fsmonitor", "core.pager", "pager.log", "core.editor"):
-        _git_run(git, repo, "config", key, command)
+    for key, name in (("diff.external", "diff"), ("core.fsmonitor", "fsmonitor"), ("core.pager", "other"), ("pager.log", "other"),
+                      ("core.editor", "other")):
+        _git_run(git, repo, "config", key, command(name))
     _git_run(git, repo, "config", "core.hooksPath", str(root))
-    return _Hostile(repo, {"config": marker})
+    return _Hostile(repo, markers)
 
 
-def _run_config_control(git: str, hostile: _Hostile) -> bool:
-    """CONTROL: ordinary git, asked for a patch with the external diff allowed, runs the program on this machine. True if it did."""
-    subprocess.run([git, "log", "-p", "--ext-diff", "--no-color"], cwd=str(hostile.repo), env=_clean_env(),
-                   capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
-    return hostile.markers["config"].exists()
+def _run_config_control(git: str, hostile: _Hostile) -> list[str]:
+    """CONTROL: ordinary git, asked for the status and for a patch with the external diff allowed, runs programs on this machine.
+
+    Returns:
+        The markers that appeared, so the check knows which settings it has really proved the protection against.
+    """
+    for args in (["status", "--porcelain"], ["log", "-p", "--ext-diff", "--no-color"]):
+        subprocess.run([git, *args], cwd=str(hostile.repo), env=_clean_env(), capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+    return [name for name, marker in hostile.markers.items() if marker.exists()]
 
 
 def check_hostile_repo_config_cannot_run_programs() -> str:
     """Prove that reading a repository whose config names programs runs none of them.
 
-    Control: ordinary git, asked for a patch with external diff allowed, runs the tripwire in a first repository
-    (SKIP if it does not). Then memdebug's adapter reads history and notes of a second, identical repository
-    and its own marker must stay absent.
+    Control: ordinary git, asked for the status and for a patch with external diff allowed, runs the tripwires in a
+    first repository (SKIP if none fires). Then, in a second, identical repository, memdebug's adapter reads
+    history and notes, and memdebug's own git wrapper is asked for the same two things, and none of the markers
+    may appear.
+
+    The history reader never asks git for a status or a patch (it uses `--raw`), and ordinary git runs no
+    program for that either, so reading alone would prove nothing about the protection. The status and the
+    patch are what make the settings fire, so they are what the wrapper is tested with.
     """
     git = _need_git()
     with _tmp() as base:
@@ -159,17 +176,22 @@ def check_hostile_repo_config_cannot_run_programs() -> str:
         # The control and the protected run each get a repository and a marker of their own (see check_rollback_is_safe for why).
         control = _config_trap_repo(git, base_path / "control", trap, "CONTROL")
         protected = _config_trap_repo(git, base_path / "protected", trap, "PWNED")
-        if not _run_config_control(git, control):
+        proved = [name for name in _run_config_control(git, control) if name != "other"]
+        if not proved:
             raise _SkipError("could not make a hostile config run a program here, so the protection is unproven")
 
         adapter = MarkdownGitAdapter(protected.repo, store="selftest")
         adapter.read_history(100)
         adapter.history("a.md")
         adapter.list_memories({"store": "selftest"})
-        if protected.markers["config"].exists():
+        for args in (["status", "--porcelain"], ["log", "-p", "--no-color", "--no-ext-diff"]):
+            adapter._git.run_small(args)
+        fired = [name for name, marker in protected.markers.items() if marker.exists()]
+        if fired:
             raise AssertionError("a program named in the repository's config was executed. What started it: "
-                                 + _tripwire_report(protected.markers, ["config"]) + f". {_git_version_line(git)}. {_NOT_A_LEFTOVER}")
-    return "a repository config that runs programs did not run any"
+                                 + _tripwire_report(protected.markers, fired) + f". {_git_version_line(git)}. {_NOT_A_LEFTOVER}")
+    return (f"a repository config that runs programs did not run any; control: ordinary git ran the {' and '.join(proved)} "
+            f"setting{'s' if len(proved) > 1 else ''} here, memdebug's git did not")
 
 
 def check_history_file_is_read_only() -> str:
