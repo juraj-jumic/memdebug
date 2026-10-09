@@ -76,6 +76,13 @@ def diff_snapshots(old: Snapshot, new: Snapshot) -> Diff:
     return result
 
 
+FROM_LABEL = "before"
+TO_LABEL = "after"
+# The two file-header lines difflib puts first in a unified diff. They are the only lines a reader may skip: any other line starting with
+# "---" or "+++" is a removed or added line of memory text that happens to begin with "--" or "++", and must be shown.
+DIFF_HEADERS = (f"--- {FROM_LABEL}", f"+++ {TO_LABEL}")
+
+
 def line_diff(before: str | None, after: str | None) -> list[str]:
     """A unified line diff of two texts, bounded in size. Lines are returned raw: the caller must
     escape them before printing.
@@ -86,7 +93,7 @@ def line_diff(before: str | None, after: str | None) -> list[str]:
     if len(a) > MAX_DIFF_LINES or len(b) > MAX_DIFF_LINES:
         a, b = a[:MAX_DIFF_LINES], b[:MAX_DIFF_LINES]
         notes.append(f"(only the first {MAX_DIFF_LINES} lines were compared)")
-    lines = [line for line in difflib.unified_diff(a, b, "before", "after", n=1, lineterm="")]
+    lines = [line for line in difflib.unified_diff(a, b, FROM_LABEL, TO_LABEL, n=1, lineterm="")]
     if len(lines) > MAX_SHOWN_LINES:
         lines = lines[:MAX_SHOWN_LINES] + [f"(diff shortened to {MAX_SHOWN_LINES} lines)"]
     return lines + notes

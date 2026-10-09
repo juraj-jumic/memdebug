@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 from ..agents import CLOUD_NOTE, FoundAgent
 from ..backends import HISTORYLESS, is_opaque_id, short_id
 from ..describe import describe_event, rollback_details
-from ..diff import Diff, diff_snapshots, line_diff
+from ..diff import DIFF_HEADERS, Diff, diff_snapshots, line_diff
 from ..errors import SnapshotError
 from ..hints import new_hints
 from ..ledger import Ledger, VerifyResult
@@ -173,8 +173,8 @@ def error_page(ctx: Context, status: int, title: str, message: str) -> Page:
 
 def diff_lines(lines: list[str]) -> Markup:
     spans: list[Markup] = []
-    for line in lines:
-        if line.startswith("+++") or line.startswith("---"):
+    for number, line in enumerate(lines):
+        if number < len(DIFF_HEADERS) and line == DIFF_HEADERS[number]:  # only the real headers; see DIFF_HEADERS
             continue
         kind = "add" if line.startswith("+") else "del" if line.startswith("-") else "hunk"
         spans.append(el("span", block(line, 2000), class_=kind))
