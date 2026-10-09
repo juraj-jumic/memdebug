@@ -35,7 +35,7 @@ def records(marker):
 def run_check(check=None):
     try:
         return (check or st.check_rollback_is_safe)()
-    except st._Skip as exc:
+    except st._SkipError as exc:
         pytest.skip(str(exc))
 
 

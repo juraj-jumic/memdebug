@@ -216,7 +216,7 @@ class FileOps:
                         os.unlink(full)
                 else:
                     self._write_file(path, old)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - an undo must try every file; failures are collected and reported
                 problems.append(f"{safe_text(path, 60)}: {safe_text(exc, 80)}")
         for folder in reversed(created_dirs):
             try:

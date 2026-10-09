@@ -183,7 +183,7 @@ def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> S
     except MemdebugError as exc:
         result.error = safe_text(exc, 300)
         return result
-    except Exception as exc:  # one store failing for an unexpected reason must not stop the others
+    except Exception as exc:  # noqa: BLE001 - one store failing for an unexpected reason must not stop the others
         result.error = f"unexpected error ({type(exc).__name__})"
         return result
     result.warnings = [safe_text(w, 300) for w in opened.notes + report.warnings]

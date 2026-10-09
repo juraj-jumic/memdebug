@@ -102,7 +102,7 @@ THEME_MAX_AGE = 365 * 24 * 3600
 _TOKEN_IN_TEXT = re.compile(r"token=[^&\s\"']*")
 
 
-class BadRequest(Exception):
+class BadRequestError(Exception):
     """Input that failed validation. The message is generic; request input is never echoed."""
 
 
@@ -254,12 +254,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         self._dispatch()
 
-    do_HEAD = do_GET
+    do_HEAD = do_GET  # noqa: N815 - http.server looks request handlers up by these exact names
 
     def _refuse_method(self) -> None:
         self._text(405, "Method not allowed. This viewer is read-only.", (("Allow", "GET, HEAD"),))
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _refuse_method
+    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _refuse_method  # noqa: N815 - the names http.server looks up
 
     def _dispatch(self) -> None:
         state: ViewerState = self.server.state  # type: ignore[attr-defined]
@@ -269,9 +269,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._handle(state)
         except (ConnectionError, TimeoutError):  # includes Windows' ConnectionAbortedError
             pass  # the browser went away
-        except BadRequest:
+        except BadRequestError:
             self._text(400, "Bad request.")
-        except Exception as exc:  # never show details; the class name is enough for the log
+        except Exception as exc:  # noqa: BLE001 - one bad request must not stop the server; never show details, the class name is enough
             logger.error("unexpected %s while handling a request", type(exc).__name__)
             try:
                 self._text(500, "Something went wrong.")
@@ -303,7 +303,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         original = parts[1] if len(parts) >= 3 else raw
         if (len(raw) > MAX_PATH or not raw.startswith("/") or raw.startswith("//") or original.startswith("//")
                 or any(ord(c) < 33 or ord(c) > 126 for c in raw)):
-            raise BadRequest
+            raise BadRequestError
         hosts = self.headers.get_all("Host") or []
         if len(hosts) != 1 or hosts[0].strip().lower() not in state.allowed_hosts:
             return self._text(421, "Misdirected request.")
@@ -317,7 +317,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             split = urlsplit(raw)
             query = parse_qs(split.query, keep_blank_values=False, max_num_fields=MAX_QUERY_FIELDS)
         except ValueError:
-            raise BadRequest from None
+            raise BadRequestError from None
         path = split.path
 
         token_in_url = query.pop("token", [None])[0]
@@ -354,7 +354,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def _set_theme(self, query: dict, state: ViewerState) -> None:
         modes = query.get("mode") or []
         if len(modes) != 1 or modes[0] not in _THEME_MODES:
-            raise BadRequest
+            raise BadRequestError
         target = "/"
         supplied = (query.get("next") or [None])[0]
         if supplied is not None and _NEXT_TEXT.match(supplied):
@@ -384,7 +384,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if not values:
             return None
         if len(values) != 1 or not _ID_RE[kind].match(values[0]):
-            raise BadRequest
+            raise BadRequestError
         return values[0]
 
     def _route(self, name: str, match: re.Match, query: dict, state: ViewerState) -> None:
@@ -404,7 +404,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if (len(query.get("op", [])) > 1 or len(query.get("trust", [])) > 1
                     or (op is not None and op not in {o.value for o in Op})
                     or (trust is not None and trust not in {t.value for t in Trust})):
-                raise BadRequest
+                raise BadRequestError
         before = self._param(query, "before", "number") if name == "timeline" else None
         event = self._param(query, "event", "event") if name == "timeline" else None
         page = self._param(query, "page", "page") if name == "snapshot" else None

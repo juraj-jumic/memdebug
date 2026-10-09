@@ -647,11 +647,11 @@ class Restorer(FileOps):
         if moved["index"]:
             try:
                 self._must(["update-index", "-z", "--index-info"], "restore the index", stdin=self._index_info(plan, undo_entries))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - an undo must try every step; failures are collected and reported
                 problems.append(f"index: {safe_text(exc, 80)}")
         if moved["ref"] and commit is not None and plan.branch and plan.head:
             try:
                 self._must(["update-ref", "-m", "memdebug: undo failed rollback", plan.branch, plan.head, commit], "restore the branch")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - an undo must try every step; failures are collected and reported
                 problems.append(f"branch: {safe_text(exc, 80)}")
         return problems

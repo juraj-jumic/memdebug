@@ -41,7 +41,7 @@ from .textsafe import console_safe, safe_text
 Result = tuple[str, str, str]  # name, PASS | FAIL | SKIP | INFO, detail
 
 
-class _Skip(Exception):
+class _SkipError(Exception):
     pass
 
 
@@ -66,10 +66,10 @@ def _git_version(git: str) -> tuple[int, int] | None:
 def _need_git() -> str:
     git = find_git()
     if not git:
-        raise _Skip("git not found; the markdown backend is unavailable here")
+        raise _SkipError("git not found; the markdown backend is unavailable here")
     version = _git_version(git)
     if not version or version < (2, 31):
-        raise _Skip("git older than 2.31; the markdown backend is unavailable here")
+        raise _SkipError("git older than 2.31; the markdown backend is unavailable here")
     return git
 
 
@@ -98,7 +98,7 @@ def check_git_ignores_global_config() -> str:
         control_env = {k: v for k, v in leak_env.items() if k != "GIT_CONFIG_GLOBAL"}
         control = _git_run(git, home, "config", "--get", "memdebugtest.key", env=control_env)
         if b"leaked" not in control.stdout:
-            raise _Skip("could not show that a global config is normally read here, so isolation is unproven")
+            raise _SkipError("could not show that a global config is normally read here, so isolation is unproven")
         ours = _git_run(git, home, "config", "--get", "memdebugtest.key", env=leak_env)
         if b"leaked" in ours.stdout:
             raise AssertionError("git still read a global config although it was switched off")
@@ -160,7 +160,7 @@ def check_hostile_repo_config_cannot_run_programs() -> str:
         control = _config_trap_repo(git, base_path / "control", trap, "CONTROL")
         protected = _config_trap_repo(git, base_path / "protected", trap, "PWNED")
         if not _run_config_control(git, control):
-            raise _Skip("could not make a hostile config run a program here, so the protection is unproven")
+            raise _SkipError("could not make a hostile config run a program here, so the protection is unproven")
 
         adapter = MarkdownGitAdapter(protected.repo, store="selftest")
         adapter.read_history(100)
@@ -213,7 +213,7 @@ def check_history_file_is_read_only() -> str:
         missing = Path(base) / "nope.db"
         try:
             Mem0Adapter(_Stub(), missing)
-        except Exception:
+        except Exception:  # noqa: BLE001 - whether the adapter refuses a missing file does not matter, only that it creates none
             pass
         if missing.exists():
             raise AssertionError("a missing history file was created")
@@ -258,7 +258,7 @@ def check_symlinks_are_not_followed() -> str:
         try:
             os.symlink(secret, link)
         except (OSError, NotImplementedError, AttributeError):
-            raise _Skip("cannot create symlinks here (Windows needs Developer Mode or administrator rights)") from None
+            raise _SkipError("cannot create symlinks here (Windows needs Developer Mode or administrator rights)") from None
         warnings = Warnings()
         text = MarkdownGitAdapter._read_working_file(str(link), "link.md", warnings)
         if text is not None or "TOP SECRET" in repr(warnings.as_list()):
@@ -273,7 +273,7 @@ def check_junctions_are_not_followed() -> str:
     the secret file behind the junction and must mark the listing incomplete.
     """
     if os.name != "nt":
-        raise _Skip("Windows only")
+        raise _SkipError("Windows only")
     git = _need_git()
     with _tmp() as base:
         outside = Path(base) / "outside"
@@ -287,7 +287,7 @@ def check_junctions_are_not_followed() -> str:
         made = subprocess.run([cmd, "/c", "mklink", "/J", str(repo / "junc"), str(outside)],
                               capture_output=True, timeout=30)
         if made.returncode != 0:
-            raise _Skip("could not create a directory junction here")
+            raise _SkipError("could not create a directory junction here")
         live = MarkdownGitAdapter(repo, store="selftest").list_memories({"store": "selftest"})
         if any("secret" in m.id or "TOP SECRET" in m.text for m in live.memories) or live.complete:
             raise AssertionError("a directory junction was followed")
@@ -354,7 +354,7 @@ def check_ledger_tamper_detection() -> str:
             raise AssertionError("an edited snapshot text was not detected")
         try:
             ledger.load_snapshot(info.id)
-        except Exception:
+        except Exception:  # noqa: BLE001 - any refusal will do; the point is that the edited snapshot does not load
             pass
         else:
             raise AssertionError("an edited snapshot was loaded without complaint")
@@ -368,7 +368,7 @@ def check_ledger_file_permissions() -> str:
     SKIP where the OS is not POSIX, since this tool does not set Windows permissions.
     """
     if os.name != "posix":
-        raise _Skip(f"Windows permissions are not set by this tool; the default ledger lives in "
+        raise _SkipError(f"Windows permissions are not set by this tool; the default ledger lives in "
                     f"{default_ledger_path().parent}, which is private to your user account")
     with _tmp() as base:
         path = Path(base) / "ledger.db"
@@ -655,7 +655,7 @@ def check_rollback_is_safe() -> str:
         protected = _hostile_repo(git, base_path / "protected", trap, "PWNED")
         armed = _run_control(git, control)
         if "filter" not in armed and "diff" not in armed:
-            raise _Skip("could not make a hostile repository run a program here, so the protection is unproven")
+            raise _SkipError("could not make a hostile repository run a program here, so the protection is unproven")
         repo, markers, original = protected.repo, protected.markers, _ORIGINAL
 
         ledger = Ledger(base_path / "ledger.db")
@@ -758,17 +758,17 @@ CHECKS: list[tuple[str, Callable[[], str]]] = [
 def run_all() -> list[Result]:
     """Run every check in CHECKS and return the environment line followed by one result per check.
 
-    A check that raises `_Skip` is reported as SKIP, an `AssertionError` as FAIL with its message, and any other
+    A check that raises `_SkipError` is reported as SKIP, an `AssertionError` as FAIL with its message, and any other
     exception as FAIL (only its type name is kept), because a check that cannot run is not a pass.
     """
     results: list[Result] = [("environment", "INFO", check_info())]
     for name, check in CHECKS:
         try:
             results.append((name, "PASS", check()))
-        except _Skip as skip:
+        except _SkipError as skip:
             results.append((name, "SKIP", str(skip)))
         except AssertionError as failure:
             results.append((name, "FAIL", str(failure)))
-        except Exception as exc:  # a check that cannot even run is not a pass
+        except Exception as exc:  # noqa: BLE001 - a check that cannot even run is not a pass
             results.append((name, "FAIL", f"could not run: {type(exc).__name__}"))
     return results
