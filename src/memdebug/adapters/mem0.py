@@ -57,6 +57,12 @@ def _text_or_none(value: object) -> tuple[bool, str | None]:
 
 
 def validate_scope(scope: object) -> dict[str, str]:
+    """Checks a Mem0 scope and returns a copy of it.
+
+    Raises:
+        AdapterError: If `scope` is not a non-empty dict, has a key other than user_id, agent_id or run_id, or has a
+            value that is not a non-empty string of at most MAX_ID_CHARS characters.
+    """
     if not isinstance(scope, dict) or not scope:
         raise AdapterError("a scope is required: give user_id, agent_id or run_id")
     clean: dict[str, str] = {}
@@ -70,6 +76,23 @@ def validate_scope(scope: object) -> dict[str, str]:
 
 
 class Mem0Adapter:
+    """Read-only adapter for a self-hosted Mem0 (see the module docstring for what is read from where).
+
+    Args:
+        memory: A mem0 `Memory` object; it must have callable `get_all` and `history` methods. Used for the live listing
+            and for one memory's history, so those two calls are made by Mem0's own code, not by this adapter.
+        history_db_path: Mem0's history database file. It is opened read-only, and only the `history` table is read.
+        max_rows: The most rows `history()` takes from Mem0's per-memory history.
+        live_limit: The most memories requested from Mem0 for one listing. A listing that reaches it is marked incomplete.
+        max_total_chars: The text budget for `read_history`.
+        clock: Supplies "now", for tests.
+
+    Raises:
+        AdapterError: From the constructor, if `memory` lacks `get_all` or `history`, a limit is not positive, or the
+            history file is not a readable regular file.
+        UnsupportedSchemaError: From the constructor, if the file has no `history` table or lacks expected columns.
+    """
+
     name = "mem0"
     capabilities = {"history", "global_feed"}
 
@@ -172,6 +195,16 @@ class Mem0Adapter:
     # -- the adapter interface -------------------------------------------------------------
 
     def read_history(self, max_rows: int) -> HistoryRead:
+        """Reads the global history table directly, including rows for memories that were since deleted.
+
+        Opens Mem0's history database read-only and takes the first `max_rows` rows in row order; the events are then
+        sorted by time. Rows that cannot be understood are counted in `skipped` and reported as warnings. The result
+        is marked truncated when there are more rows or the text budget (`max_total_chars`) was exceeded.
+
+        Raises:
+            AdapterError: If `max_rows` is not positive or the database cannot be read.
+            UnsupportedSchemaError: If the history table lacks expected columns.
+        """
         if not (isinstance(max_rows, int) and max_rows > 0):
             raise AdapterError("max_rows must be a positive integer")
         warnings = _Warnings()
@@ -215,6 +248,16 @@ class Mem0Adapter:
         )
 
     def list_memories(self, scope: dict[str, str]) -> LiveMemories:
+        """Lists live memories through Mem0's own `get_all`, including expired ones.
+
+        The result is marked incomplete when the count reaches `live_limit` or an item is skipped (missing id or text,
+        or failed validation); a duplicate id is skipped without that. Each memory's scope is the requested scope
+        plus any scope keys Mem0 reports on the item.
+
+        Raises:
+            AdapterError: If `scope` is invalid (see `validate_scope`), `get_all` fails, or it returns an unexpected
+                shape.
+        """
         clean = validate_scope(scope)
         try:
             result = self._memory.get_all(filters=dict(clean), top_k=self._live_limit, show_expired=True)
@@ -251,6 +294,14 @@ class Mem0Adapter:
         return LiveMemories(memories=memories, complete=complete, warnings=warnings.as_list())
 
     def history(self, memory_id: str) -> list[MemoryEvent]:
+        """Returns one memory's events through Mem0's own `history()`, oldest first.
+
+        Reads at most `max_rows` rows. Rows that cannot be understood are skipped, and their warnings are logged
+        rather than returned.
+
+        Raises:
+            AdapterError: If `memory_id` is not usable, or `history()` fails or returns an unexpected shape.
+        """
         if _clean_id(memory_id) is None:
             raise AdapterError(f"memory_id must be a non-empty string of at most {MAX_ID_CHARS} characters")
         try:

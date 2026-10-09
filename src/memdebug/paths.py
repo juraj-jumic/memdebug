@@ -1,5 +1,7 @@
-"""Where the ledger lives by default: a per-user folder, not the current directory (which could be
-inside the repository being watched, or a shared folder).
+"""Where the ledger lives by default: a per-user folder, not the current directory.
+
+The current directory could be inside the repository being watched, or a shared folder. This module holds the default locations of
+the ledger, the list of watched stores and the rollback backups.
 """
 from __future__ import annotations
 
@@ -8,6 +10,10 @@ from pathlib import Path
 
 
 def default_ledger_path() -> Path:
+    """The default ledger file, `memdebug/ledger.db` in the user's data folder.
+
+    This is `%LOCALAPPDATA%` on Windows and `$XDG_DATA_HOME` (or `~/.local/share`) elsewhere. Nothing is created.
+    """
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
     else:

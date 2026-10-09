@@ -1,5 +1,6 @@
-"""The file-level half of a rollback, shared by the git engine (restore.py) and the plain-folder engine (folder_restore.py).
+"""The file-level half of a rollback, shared by both rollback engines.
 
+The git engine (restore.py) and the plain-folder engine (folder_restore.py) both inherit `FileOps` from this module.
 Nothing here knows about git. It reads, checks, writes and removes files under one root folder, and it is the only code that
 does, so the same rules hold for every store type:
 
@@ -34,8 +35,12 @@ class FileOps:
     _root: str | os.PathLike[str]
 
     def _inspect(self, relpath: str) -> tuple[str, bytes | None]:
-        """Read a working-tree file without following links: ("ok", bytes), ("missing", None), ("large", None) or
-        ("unsafe", None).
+        """Reads a working-tree file without following links.
+
+        Returns:
+            ("ok", bytes), ("missing", None) when the file or a folder on the way does not exist, ("large", None) when it
+            is over MAX_FILE_BYTES, or ("unsafe", None) when a folder on the way or the file itself is a link or
+            junction or is not a plain folder or file, or when it cannot be opened or read.
         """
         current = longpath.fs(self._root)
         parts = relpath.split("/")
@@ -76,6 +81,14 @@ class FileOps:
         return ("large", None) if len(data) > MAX_FILE_BYTES else ("ok", data)
 
     def _check_target(self, rel: str, must_exist: bool = False) -> None:
+        """Checks that `rel` can be written (or, with `must_exist`, removed) without crossing a link.
+
+        Reads only; changes nothing.
+
+        Raises:
+            RestoreError: If a folder on the way is a link or not a folder, the file is not a plain file, another file in
+                its folder differs from it only by letter case, or (with `must_exist`) a folder or the file is missing.
+        """
         current = longpath.fs(self._root)
         parts = rel.split("/")
         for part in parts[:-1]:
@@ -107,7 +120,17 @@ class FileOps:
                 raise RestoreError(f"{safe_text(rel, 60)}: not a plain file")
 
     def _write_file(self, rel: str, data: bytes) -> list[str]:
-        """Replace or create a file through a temporary file and an atomic rename. Returns the folders it created."""
+        """Replaces or creates a file through a temporary file and an atomic rename.
+
+        Missing folders on the way are created. If anything fails, the temporary file is deleted and any folders created
+        here are removed again (if empty) before the error is raised.
+
+        Returns:
+            The folders this call created, outermost first.
+
+        Raises:
+            RestoreError: If a folder on the way, or the file itself, is a link or not a plain folder or file.
+        """
         created: list[str] = []
         try:
             current = longpath.fs(self._root)
@@ -157,11 +180,16 @@ class FileOps:
             raise
 
     def _remove_file(self, rel: str) -> None:
+        """Deletes a plain file after `_check_target` confirms it is there and safe to touch."""
         self._check_target(rel, must_exist=True)
         os.unlink(os.path.join(longpath.fs(self._root), *rel.split("/")))
 
     def _verify_files(self, items: Sequence) -> None:
-        """Every item must now be on disk exactly as planned."""
+        """Checks that every item is now on disk exactly as planned.
+
+        Raises:
+            RestoreError: If a removed file is still there, or a written file is missing or does not hold the planned text.
+        """
         for item in items:
             status, data = self._inspect(item.path)
             if item.action == "remove":
@@ -171,7 +199,14 @@ class FileOps:
                 raise RestoreError(f"{safe_text(item.path, 60)} does not hold the restored text after writing")
 
     def _undo_files(self, journal: Sequence, created_dirs: Sequence[str]) -> list[str]:
-        """Put the files back, newest step first. Returns what could not be undone."""
+        """Puts the files back, newest step first, then removes the folders that were created.
+
+        Each journal entry is a path and the bytes it held before (None if it did not exist). Failures do not stop
+        the undo. Created folders are removed only if they are empty.
+
+        Returns:
+            One message for each file that could not be put back; empty when everything was undone.
+        """
         problems: list[str] = []
         for path, old in reversed(journal):
             try:

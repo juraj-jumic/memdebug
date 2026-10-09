@@ -16,6 +16,13 @@ from .models import META_OPS, Memory, MemoryEvent, Op
 
 @dataclass(frozen=True)
 class KnownMemory:
+    """A memory as the ledger's events say it is: its current text and its scope.
+
+    Attributes:
+        text: The text after the latest event for the memory.
+        scope: The scope recorded for the memory, or empty when no event named one.
+    """
+
     text: str
     scope: dict[str, str] = field(default_factory=dict)
 
@@ -60,6 +67,23 @@ def find_external_changes(
     scope: dict[str, str],
     complete: bool = True,
 ) -> list[MemoryEvent]:
+    """EXTERNAL events for every difference between the known state and the live listing.
+
+    A live memory that is new to the ledger, or whose text differs from the known text, gives an event with the
+    old text in `before` (None for a new memory). A known memory that is missing from the live listing gives an
+    event with `after` set to None, but only when `complete` is true and the memory's scope matches `scope`.
+
+    Args:
+        known: The state replayed from the ledger, as returned by replay_events().
+        live: The memories the backend holds now.
+        backend: The backend name to put on the events.
+        now: The time to put on the events, which are marked as observed.
+        scope: The scope of the live listing; deletions are only claimed inside it.
+        complete: False when the live listing may have been cut short, which suppresses deletions.
+
+    Returns:
+        The events, with changed and new memories first, then deletions, each group ordered by memory id.
+    """
     events: list[MemoryEvent] = []
     live_ids = {m.id for m in live}
     for m in sorted(live, key=lambda m: m.id):

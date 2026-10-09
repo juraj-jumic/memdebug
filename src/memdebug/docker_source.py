@@ -49,6 +49,7 @@ class DockerError(MemdebugError):
 
 
 def valid_container(name: object) -> bool:
+    """Whether `name` is a string that matches the strict container-name pattern."""
     return isinstance(name, str) and bool(_NAME.match(name))
 
 
@@ -76,6 +77,18 @@ class Docker:
         self.path = found
 
     def run(self, args: list[str], *, timeout: float) -> tuple[int, bytes, str]:
+        """Run docker with `args` and wait for it.
+
+        The command gets no shell, no standard input, a small allow-listed environment and the temporary folder as its working
+        folder.
+
+        Returns:
+            The exit code, the standard output as bytes, and the first 2000 bytes of standard error decoded as text.
+
+        Raises:
+            DockerError: If docker does not finish within `timeout` seconds, cannot be started, or writes more than `MAX_OUTPUT`
+                bytes to standard output.
+        """
         env = {key: os.environ[key] for key in _ENV_KEYS if key in os.environ}
         try:
             done = subprocess.run([self.path, *args], capture_output=True, timeout=timeout, env=env, shell=False,

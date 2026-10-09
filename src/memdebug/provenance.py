@@ -56,6 +56,15 @@ class Writer:
 
 @dataclass(frozen=True)
 class Provenance:
+    """What a search of the session logs found for one path in one period.
+
+    Attributes:
+        writers: The logged calls that wrote the path, newest first, at most `MAX_WRITERS`.
+        shell_calls: How many shell commands ran in the period. They might have written the file and cannot be matched.
+        logs_read: How many session logs were read to the end without an error.
+        complete: False when a limit, an unreadable log or an oversized line meant some of the period was not searched.
+    """
+
     writers: tuple[Writer, ...]   # newest first, at most MAX_WRITERS
     shell_calls: int              # shell commands that ran in the period; they might have written the file and cannot be matched
     logs_read: int
@@ -64,14 +73,25 @@ class Provenance:
 
 @dataclass(frozen=True)
 class Explanation:
-    """What a search for one change's writer came to: either why nothing was searched, or the result."""
+    """What a search for one change's writer came to: either why nothing was searched, or the result.
+
+    Attributes:
+        reason: Why no search was made. Set only when there is no `result`.
+        result: What the search found, when one was made.
+    """
+
     reason: str | None = None     # set when no search was made
     result: Provenance | None = None
 
 
 def note_paths(root: str | os.PathLike[str], memory_id: str) -> list[str]:
-    """Where a note lives, spelled the ways a log might spell it (as registered, and with links resolved). The id comes from the ledger, which
-    anyone could edit, so a path is built only from an id that passes the check the store readers apply to every file name; else nothing.
+    """Where a note lives, spelled the ways a log might spell it.
+
+    The spellings are the path as registered and the path with links resolved. The id comes from the ledger, which anyone could
+    edit, so a path is built only from an id that passes the check the store readers apply to every file name; else nothing.
+
+    Returns:
+        The distinct spellings, sorted, or an empty list if the id is not acceptable.
     """
     if _valid_relpath(memory_id, (".md",)) is None:
         return []
@@ -85,8 +105,11 @@ def note_paths(root: str | os.PathLike[str], memory_id: str) -> list[str]:
 
 
 def explain_change(root: str | os.PathLike[str], memory_id: str, since: datetime | None, noticed: datetime, home: Path | None = None) -> Explanation:
-    """Search the session logs for what wrote one note between `since` (the last time the ledger recorded anything about it) and `noticed`.
-    `since` is a looser bound than the true last look, so the real write is never left out; it may take in earlier ones.
+    """Search the session logs for what wrote one note between `since` and `noticed`.
+
+    `since` is the last time the ledger recorded anything about the note. It is a looser bound than the true last look, so the
+    real write is never left out; it may take in earlier ones. The search runs to `noticed` plus `CLOCK_SLACK`. If `since` is
+    None, either time lacks a time zone, or the note's id is not acceptable, nothing is searched and the explanation says why.
     """
     if since is None:
         return Explanation(reason="no earlier record of this store to say when the change happened")
@@ -99,7 +122,10 @@ def explain_change(root: str | os.PathLike[str], memory_id: str, since: datetime
 
 
 def describe_explanation(explanation: Explanation) -> str:
-    """One line for a person. It states what was found and what it cannot show; every value in it was checked or comes from a fixed list."""
+    """One line for a person.
+
+    It states what was found and what it cannot show; every value in it was checked or comes from a fixed list.
+    """
     if explanation.result is None:
         return f"not searched: {explanation.reason}"
     found = explanation.result
@@ -135,8 +161,13 @@ def _when(value: object) -> datetime | None:
 
 
 def _log_files(root: Path, start: datetime) -> tuple[list[tuple[str, int]], bool]:
-    """The session logs that could hold a call made since `start`: plain files directly inside real project folders. A log last written
-    before `start` cannot, so it is skipped without being opened.
+    """The session logs that could hold a call made since `start`.
+
+    These are plain files directly inside real project folders. A log last written before `start` cannot, so it is skipped
+    without being opened.
+
+    Returns:
+        The path and size of each log, newest first, at most `MAX_LOG_FILES`, and whether the listing is complete.
     """
     try:
         if not _is_plain(longpath.lstat(root), True):
@@ -213,8 +244,19 @@ def _calls(record: object):
 
 
 def find_writers(path: str | os.PathLike[str] | Sequence[str], start: datetime, end: datetime, home: Path | None = None) -> Provenance:
-    """The logged calls that wrote `path` between `start` and `end` (both timezone-aware). `path` may be several spellings of one file. Paths
-    are compared as text and never opened.
+    """The logged calls that wrote `path` between `start` and `end`.
+
+    `path` may be several spellings of one file. Paths are compared as text and never opened. The session logs under
+    `<home>/.claude/projects` are read within the module's limits.
+
+    Args:
+        path: One spelling of the file's path, or several.
+        start: The start of the period, timezone-aware.
+        end: The end of the period, timezone-aware.
+        home: The home folder whose logs are searched. Defaults to the current user's.
+
+    Raises:
+        ValueError: If `start` or `end` has no time zone.
     """
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start and end must carry a time zone")

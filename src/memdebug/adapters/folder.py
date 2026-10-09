@@ -22,6 +22,18 @@ from .markdown_git import MarkdownGitAdapter, _valid_relpath
 
 
 class FolderAdapter(MarkdownGitAdapter):
+    """Read-only adapter for a plain folder of markdown files that is not a git repository.
+
+    A file's id is its path relative to the folder, and the store's scope is `{"store": <name>}`. It inherits the
+    listing code of `MarkdownGitAdapter` but never runs git and keeps no history. With `only`, it is limited to
+    those named files. The same options as the git adapter apply (`subdir`, `suffixes`, `max_files`, `store`).
+
+    Raises:
+        AdapterError: From the constructor, if the path cannot be accessed or is not a folder, if it contains a `.git`
+            entry, if a limit or the suffixes are invalid, or if `subdir` or `only` is not a plain path of the
+            expected kind.
+    """
+
     name = "folder"
     capabilities: set[str] = set()  # no history to read
 
@@ -69,14 +81,23 @@ class FolderAdapter(MarkdownGitAdapter):
         return self._only
 
     def read_history(self, max_rows: int) -> HistoryRead:
+        """Returns an empty history: a plain folder records none."""
         return HistoryRead(events=[], refs=set(), truncated=False)
 
     def history(self, memory_id: str) -> list[MemoryEvent]:
+        """Returns no events: a plain folder records no history."""
         return []
 
     def list_memories(self, scope: dict[str, str]) -> LiveMemories:
-        """With `only`, exactly those files and nothing else: the rest of the folder (often a settings folder that also holds
-        credentials) is never listed or opened.
+        """Lists the markdown files in the folder, or only the files named by `only`.
+
+        With `only`, exactly those files and nothing else: the rest of the folder (often a settings folder that also holds
+        credentials) is never listed or opened. A named file that does not exist yet is simply left out; one that cannot
+        be read safely is left out and marks the listing incomplete. Without `only`, this is the git adapter's working-tree
+        listing.
+
+        Raises:
+            AdapterError: If `scope` is not `{"store": <this store's name>}`.
         """
         if self._only is None:
             return super().list_memories(scope)

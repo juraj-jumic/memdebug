@@ -46,6 +46,17 @@ def _crlf_throughout(data: bytes | None) -> bool:
 
 
 class FolderRestorer(FileOps):
+    """The rollback engine for a plain-folder store (see the module docstring for its rules).
+
+    Use `plan` to see what a rollback would do, and `apply` to do it. Only `apply` writes: to the notes folder and to
+    the backup folder under `backup_root`. The backup folder must not lie inside the notes folder or contain it; if it
+    does, the plan has a blocker and nothing is applied.
+
+    Args:
+        adapter: The folder adapter for the notes being restored.
+        backup_root: The folder (next to the ledger) under which backups are created, one folder per rollback.
+    """
+
     def __init__(self, adapter: FolderAdapter, backup_root: str | os.PathLike[str]):
         self._adapter = adapter
         self._root = adapter.root
@@ -71,6 +82,23 @@ class FolderRestorer(FileOps):
         return text.encode("utf-8"), "rebuilt from the snapshot's text (a snapshot does not keep line endings, so they are LF)"
 
     def plan(self, snapshot: Snapshot, *, only: Sequence[str] = (), remove_added: bool = False) -> Plan:
+        """Compares the snapshot with the folder and reports what a rollback would do. Writes nothing.
+
+        Files that cannot be safely written (links, folders, over-large files, unsafe names, files this store does
+        not cover, text the snapshot cannot hold faithfully) are listed in `skipped`.
+        Unsafe states (a backup folder inside the notes or the reverse, names that differ only by letter case, too many
+        files) are reported as blockers on the returned plan.
+
+        Args:
+            snapshot: The snapshot to restore.
+            only: Restrict the plan to these files. Empty means every file in the snapshot.
+            remove_added: Also plan to remove files added since the snapshot. This is done only when both the snapshot and
+                the current listing are complete; otherwise a warning is given and nothing is removed.
+
+        Raises:
+            RestoreError: If the snapshot is from a different store, a name in `only` is not a usable memory file name, or
+                a name in `only` is in neither the snapshot nor the store.
+        """
         info = snapshot.info
         adapter = self._adapter
         if info.backend != adapter.name or info.scope != {"store": adapter.store}:
@@ -179,7 +207,29 @@ class FolderRestorer(FileOps):
 
     def apply(self, snapshot: Snapshot, *, expected_plan_id: str, only: Sequence[str] = (), remove_added: bool = False,
               now: datetime | None = None) -> Outcome:
-        """Carry out the plan the person confirmed. Re-plans first and refuses if anything has changed since."""
+        """Carry out the plan the person confirmed. Re-plans first and refuses if anything has changed since.
+
+        This is the only method that writes to the notes. It first copies everything it would overwrite or delete into
+        a new backup folder (and checks the copies), then changes the files in place. If any step fails, the files are
+        put back (the backup folder is kept). There is no commit, so the outcome's `branch`, `previous_head` and `commit`
+        are None.
+
+        Args:
+            snapshot: The snapshot to restore.
+            expected_plan_id: The `plan_id` of the plan the person confirmed.
+            only: The same restriction that was given to `plan`.
+            remove_added: The same setting that was given to `plan`.
+            now: The time to record in the backup name; defaults to the current time.
+
+        Returns:
+            What was done, including where the backup is. If the plan has nothing to change, nothing is written and no
+            backup is made.
+
+        Raises:
+            RestoreError: If the new plan has blockers, differs from the confirmed plan, the backup could not be
+                written (nothing was changed), or a step fails. The message says whether the rollback was undone; if it
+                could not be fully undone, it lists what remains and names the backup folder.
+        """
         now = now or datetime.now(timezone.utc)
         plan = self.plan(snapshot, only=only, remove_added=remove_added)
         if plan.blockers:
@@ -245,8 +295,17 @@ class FolderRestorer(FileOps):
             os.fsync(handle.fileno())
 
     def _save_backup(self, items: list[Item], plan: Plan, now: datetime) -> tuple[str, Path]:
-        """Copy what is about to be overwritten or deleted, byte for byte, into a new private folder, and check the copies.
-        The name is recorded in the ledger in the same form the git engine uses; here it names a folder, not a git ref.
+        """Copies what is about to be overwritten or deleted into a new private backup folder, and checks the copies.
+
+        The copies are byte for byte, with a manifest listing them. The name is recorded in the ledger in the same form
+        the git engine uses; here it names a folder, not a git ref. If anything fails, the new backup folder is deleted
+        and the error is raised before the notes are touched.
+
+        Returns:
+            The backup's name (in the git engine's ref form) and the folder it was written to.
+
+        Raises:
+            RestoreError: If the backup folder overlaps the notes folder, or a copy cannot be written or does not match.
         """
         problem = self._backup_problem()
         if problem is not None:

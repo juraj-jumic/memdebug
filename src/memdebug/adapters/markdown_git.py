@@ -58,8 +58,13 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def find_git() -> str | None:
-    """Find git on PATH, ignoring the current folder. Windows (and an empty or '.' PATH entry on
-    POSIX) would otherwise run a git.exe planted in whatever folder you happen to be in.
+    """Finds git on PATH, ignoring the current folder.
+
+    Windows (and an empty or '.' PATH entry on POSIX) would otherwise run a git.exe planted in whatever folder you
+    happen to be in. Only absolute PATH entries are searched.
+
+    Returns:
+        The absolute path of the first executable git found, or None if there is none.
     """
     names = ["git.exe"] if os.name == "nt" else ["git"]
     for directory in os.environ.get("PATH", "").split(os.pathsep):
@@ -89,8 +94,10 @@ _FORBIDDEN_CHARS = set('"\\:*?<>|')  # quotes git adds, NTFS streams and drive l
 
 
 def _bad_component(part: str) -> bool:
-    """A path component that is dangerous on some platform. Applied everywhere, so a repository
-    looks the same from every operating system.
+    """Tells whether a path component is dangerous on some platform.
+
+    Applied everywhere, so a repository looks the same from every operating system. Covers empty, "." and ".."
+    parts, trailing dots or spaces, the git folder and its NTFS short name, and Windows device names.
     """
     if part in ("", ".", ".."):
         return True
@@ -108,9 +115,12 @@ def _is_reparse_point(info: os.stat_result) -> bool:
 
 
 def _valid_relpath(path: str, suffixes: tuple[str, ...]) -> str | None:
-    """A repository-relative path that is safe to show, store and compare; else None.
+    """Returns a repository-relative path that is safe to show, store and compare; else None.
+
     git quotes names with a double quote or backslash, so refusing them everywhere keeps the
-    history and the working-tree listing in agreement.
+    history and the working-tree listing in agreement. A path is also refused when it is too long, is
+    absolute, has control characters or other forbidden characters, has a component rejected by `_bad_component`,
+    or does not end in one of `suffixes` (compared ignoring case).
     """
     if not path or len(path) > MAX_ID_CHARS or path[0] == "/" or has_unsafe_chars(path):
         return None
@@ -396,6 +406,19 @@ class _Change:
 
 
 class MarkdownGitAdapter:
+    """Read-only adapter for markdown memory files kept in a git repository.
+
+    A file's id is its path relative to the repository top, and the store's scope is `{"store": <name>}`. Live
+    memories come from the working tree and history from `git log` (see the module docstring for the hardening
+    applied to the untrusted repository). The constructor runs git for a version check and to check that `root` is
+    the repository top.
+
+    Raises:
+        AdapterError: From the constructor, if the path is not the top of a usable git repository, git is missing,
+            too old or not a real executable, a limit or the suffixes are invalid, or `subdir` is not a plain existing
+            folder inside the repository.
+    """
+
     name = "markdown-git"
     capabilities = {"history", "global_feed"}
 
@@ -442,23 +465,28 @@ class MarkdownGitAdapter:
 
     @property
     def store(self) -> str:
+        """The store name used in scopes, snapshots and events."""
         return self._store
 
     # Read-only views for restore.py, which lives beside this adapter and shares its hardening.
     @property
     def root(self) -> Path:
+        """The resolved path of the repository top (or, for a plain folder, of the folder)."""
         return self._root
 
     @property
     def git(self) -> "_Git":
+        """The hardened runner for git commands, shared with the rollback engine."""
         return self._git
 
     @property
     def subdir(self) -> str | None:
+        """The folder inside the repository this store is limited to, or None for the whole repository."""
         return self._subdir
 
     @property
     def suffixes(self) -> tuple[str, ...]:
+        """The lowercase file name endings that count as memory files, such as ".md"."""
         return self._suffixes
 
     # -- setup checks -------------------------------------------------------------------------
@@ -498,6 +526,16 @@ class MarkdownGitAdapter:
     # -- history ------------------------------------------------------------------------------
 
     def read_history(self, max_rows: int) -> HistoryRead:
+        """Reads the first-parent history of HEAD, oldest change first, as one event per file change.
+
+        Runs read-only git commands and reads file versions from git objects, never from the working tree. Only
+        changes to files with a memory-file name inside `subdir` become events; renames are reported as a delete plus
+        an add. A repository with no commits yields an empty history. The result is marked truncated when `max_rows`
+        changes or the text budget (`max_total_chars`) was reached.
+
+        Raises:
+            AdapterError: If `max_rows` is not positive, or git fails or times out.
+        """
         if not (isinstance(max_rows, int) and max_rows > 0):
             raise AdapterError("max_rows must be a positive integer")
         warnings = Warnings()
@@ -632,6 +670,18 @@ class MarkdownGitAdapter:
     # -- live listing (the working tree) -----------------------------------------------------------------
 
     def list_memories(self, scope: dict[str, str]) -> LiveMemories:
+        """Lists the memory files in the working tree, which is what the agent reads (uncommitted edits included).
+
+        Reads files directly, without git. Links and junctions are never followed, and anything that is not a plain
+        regular file, a folder or file with an unsafe name, and folders deeper than MAX_WALK_DEPTH are skipped (the
+        `.git` folder is skipped silently). Every other skip is reported as a warning and marks the listing
+        incomplete, as does reaching `max_files`.
+        A file over MAX_FILE_BYTES is listed with a "too large" marker instead of its text, and line endings are
+        normalised to LF.
+
+        Raises:
+            AdapterError: If `scope` is not `{"store": <this store's name>}`.
+        """
         if scope != {"store": self._store}:
             raise AdapterError(f"scope must be {{'store': {safe_text(self._store, 40)!r}}} for this repository")
         warnings = Warnings()
@@ -731,6 +781,14 @@ class MarkdownGitAdapter:
         return _text_from_bytes(data)
 
     def history(self, memory_id: str) -> list[MemoryEvent]:
+        """Returns the events for one file, filtered from the global history.
+
+        Reads at most the oldest 100,000 changes of the repository, so events beyond that are not returned and no
+        warning says so.
+
+        Raises:
+            AdapterError: If `memory_id` is not a usable id, or git fails or times out.
+        """
         if clean_id(memory_id) is None:
             raise AdapterError(f"memory_id must be a non-empty string of at most {MAX_ID_CHARS} characters")
         return [e for e in self.read_history(100_000).events if e.memory_id == memory_id]

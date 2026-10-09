@@ -48,6 +48,7 @@ _INTERNAL_URL = re.compile(r"^/(?!/)[A-Za-z0-9_\-./?=&%:~+,]*\Z")
 
 
 def raw_doctype() -> Markup:
+    """The HTML doctype declaration, which `el()` cannot produce."""
     return Markup("<!doctype html>")
 
 
@@ -90,6 +91,22 @@ def _render_children(children: Iterable) -> str:
 
 
 def el(tag: str, *children, **attrs) -> Markup:
+    """Build one HTML element. Plain string children are escaped; only `Markup` is inserted as it is.
+
+    Args:
+        tag: A tag from the fixed allow-list.
+        *children: Strings, numbers, `Markup`, or lists and tuples of these. None and False are skipped.
+        **attrs: Attributes from the fixed allow-list. A trailing underscore is dropped and the other underscores
+            become hyphens (`class_` is `class`, `aria_label` is `aria-label`). True writes the bare attribute;
+            None and False omit it. Values are escaped, and `href` and `action` must be internal paths.
+
+    Returns:
+        The element as `Markup`.
+
+    Raises:
+        ValueError: If the tag or an attribute is not allowed, a URL attribute is not an internal path, or a void
+            tag is given children.
+    """
     if tag not in _TAGS:
         raise ValueError(f"tag not allowed: {tag!r}")
     opening = f"<{tag}{_render_attrs(attrs)}>"
@@ -106,8 +123,11 @@ def inline(text: object, limit: int | None = 200) -> Markup:
 
 
 def block(text: object, limit: int = 20_000) -> Markup:
-    """Untrusted multi-line text for a <pre>: line breaks and tabs are kept, every other control,
-    format, bidi or line-separator character is shown as a visible escape.
+    """Untrusted multi-line text for a <pre>, escaped.
+
+    Line breaks and tabs are kept (a CRLF pair becomes one line break); every other control, format, bidi or
+    line-separator character is shown as a visible escape. Text longer than `limit` characters is cut there and
+    a note says how much was shown.
     """
     value = str(text if text is not None else "")
     total = len(value)

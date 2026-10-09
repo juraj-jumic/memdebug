@@ -30,6 +30,19 @@ MAX_EXPLAINED = 5                           # searches of the session logs in on
 
 @dataclass
 class StoreResult:
+    """What one pass over one store found.
+
+    Attributes:
+        store: The store that was checked.
+        changes: The changes recorded in the ledger during this pass, as (operation, memory id).
+        outside_history: How many changes were found that no history of the store explains.
+        error: Why the store could not be checked; None if it could.
+        warnings: Notes from opening the store and from the sync.
+        hints: Wording worth a second look in what changed, as (memory id, hint).
+        previews: For each changed memory id, the text it now holds (or held before, if removed), used to label ids.
+        provenance: For some flagged notes, one line about which logged agent session wrote it (see provenance.py).
+    """
+
     store: StoreConfig
     changes: list[tuple[Op, str]] = field(default_factory=list)
     outside_history: int = 0
@@ -41,15 +54,28 @@ class StoreResult:
 
     @property
     def attention(self) -> bool:
+        """Whether something changed outside the store's history and needs a person's look."""
         return self.outside_history > 0
 
     @property
     def quiet(self) -> bool:
+        """Whether the store was checked and nothing new was recorded."""
         return not self.changes and self.error is None
 
 
 @dataclass
 class CheckSummary:
+    """The outcome of checking every registered store, plus the state of the ledger itself.
+
+    Attributes:
+        results: One result per store, in registry order.
+        ledger_ok: Whether the ledger's hash chain verified.
+        ledger_problems: Up to five problems the verification reported, shortened for display.
+        witness_note: What happened to the witness file; None if none is configured, the ledger did not verify, or
+            the ledger holds no events.
+        witness_warning: Set when the witness lives on the same disk as the ledger.
+    """
+
     results: list[StoreResult]
     ledger_ok: bool
     ledger_problems: list[str] = field(default_factory=list)
@@ -58,10 +84,12 @@ class CheckSummary:
 
     @property
     def attention(self) -> bool:
+        """Whether the ledger failed its check or any store has a change outside its history."""
         return not self.ledger_ok or any(r.attention for r in self.results)
 
     @property
     def hinted(self) -> bool:
+        """Whether any store has wording worth a second look in what changed."""
         return any(r.hints for r in self.results)
 
     def exit_code_for(self, strict: bool = False) -> int:
@@ -70,19 +98,23 @@ class CheckSummary:
 
     @property
     def failed(self) -> bool:
+        """Whether any store could not be checked."""
         return any(r.error for r in self.results)
 
     @property
     def exit_code(self) -> int:
+        """The process exit code without strict mode: 1 for attention, 2 for a store that failed, else 0."""
         return 1 if self.attention else 2 if self.failed else 0
 
 
 def _list(ids: list[str], limit: int = 3, previews: dict[str, str] | None = None) -> str:
+    """Name up to `limit` memories, with their previews to label opaque ids, and count the rest."""
     shown = ", ".join(friendly_id(i, (previews or {}).get(i)) for i in ids[:limit])
     return shown + (f" and {len(ids) - limit} more" if len(ids) > limit else "")
 
 
 def describe(result: StoreResult) -> str:
+    """Return the one-line summary of a store's pass: could not be checked, quiet, or the changes found."""
     name = safe_text(result.store.name, 40)
     if result.error:
         return f"  {name}: COULD NOT BE CHECKED: {result.error}"
@@ -98,6 +130,7 @@ def describe(result: StoreResult) -> str:
 
 
 def hint_lines(result: StoreResult) -> list[str]:
+    """Return display lines for up to three hints, plus a line counting any more; the hint text is shortened by `safe_text`."""
     shown = [f"    worth a second look: {friendly_id(mid, result.previews.get(mid))}: {safe_text(h.message, 120)}" for mid, h in result.hints[:3]]
     if len(result.hints) > 3:
         shown.append(f"    ... and {len(result.hints) - 3} more (see 'memdebug serve' or 'memdebug report')")
@@ -105,14 +138,21 @@ def hint_lines(result: StoreResult) -> list[str]:
 
 
 def _search_start(earlier: list[LedgerEntry], event: MemoryEvent) -> datetime | None:
-    """When to start looking for what wrote a changed note: the last time the ledger recorded anything about that note, else about its store.
-    Both are earlier than the true last look, so the real write is never left out. None for a store seen for the first time.
+    """Find when to start looking for what wrote a changed note.
+
+    That is the last time the ledger recorded anything about that note, else about its store. Both are earlier
+    than the true last look, so the real write is never left out. None for a store seen for the first time.
+
+    Args:
+        earlier: The ledger entries from before this pass.
+        event: The change being explained; its backend and scope pick the store's entries.
     """
     same_store = [e.event for e in earlier if e.event.backend == event.backend and e.event.scope == event.scope]
     return max((e.ts for e in same_store if e.memory_id == event.memory_id), default=None) or max((e.ts for e in same_store), default=None)
 
 
 def provenance_lines(result: StoreResult) -> list[str]:
+    """Return display lines saying who wrote up to three flagged notes, plus a line counting any more."""
     shown = [f"    who wrote it: {friendly_id(mid, result.previews.get(mid))}: {safe_text(text, 240)}" for mid, text in list(result.provenance.items())[:3]]
     if len(result.provenance) > 3:
         shown.append(f"    ... and {len(result.provenance) - 3} more")
@@ -120,6 +160,21 @@ def provenance_lines(result: StoreResult) -> list[str]:
 
 
 def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> StoreResult:
+    """Sync one store into the ledger and report what the sync recorded.
+
+    Opens the store (an Open WebUI store in Docker gets a fresh copy of its database first), runs a sync, which
+    appends to the ledger, and scans what changed for wording worth a second look. For file-based stores, a change
+    outside the history or a flagged change may also get a search of the Claude Code session logs for what wrote it
+    (at most MAX_EXPLAINED per pass). A store that cannot be read is reported in `error`, never raised.
+
+    Args:
+        store: The registered store to check.
+        ledger: The ledger the sync writes to.
+        settle: Seconds the sync waits before its second look at a suspected outside change.
+
+    Returns:
+        The changes, warnings, hints and provenance lines from this pass, or the error.
+    """
     result = StoreResult(store)
     before = ledger.counts()["events"]
     try:
@@ -150,6 +205,20 @@ def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> S
 
 
 def check_all(registry: Registry, ledger: Ledger, *, settle: float = 1.0, ledger_path: Path | None = None) -> CheckSummary:
+    """Check every store in the registry, verify the ledger, and update the witness if one is configured.
+
+    Writes to the ledger (through each store's sync) and, only when the ledger verifies and holds events, appends
+    to the witness file. A failing witness is reported in the summary, not raised.
+
+    Args:
+        registry: The stores to check, and the optional witness path.
+        ledger: The ledger the syncs write to and that is verified.
+        settle: Passed to each store's check.
+        ledger_path: Where the ledger lives; with it, a witness on the same disk gets a warning.
+
+    Returns:
+        One result per store, the ledger verdict and the witness notes.
+    """
     results = [check_store(store, ledger, settle=settle) for store in registry.stores]
     verdict = ledger.verify()
     summary = CheckSummary(results, verdict.ok, [safe_text(p, 300) for p in verdict.problems[:5]])
@@ -165,6 +234,7 @@ def check_all(registry: Registry, ledger: Ledger, *, settle: float = 1.0, ledger
 
 
 def summary_lines(summary: CheckSummary) -> list[str]:
+    """Return the full report of a check as display lines: each store, then the ledger verdict and the witness note."""
     lines = [line for r in summary.results for line in [describe(r), *hint_lines(r), *provenance_lines(r)]]
     lines.append("  The ledger is intact." if summary.ledger_ok else "  PROBLEM: the ledger failed its integrity check: "
                  + (summary.ledger_problems[0] if summary.ledger_problems else ""))
@@ -176,6 +246,7 @@ def summary_lines(summary: CheckSummary) -> list[str]:
 # -- status: look, change nothing -----------------------------------------------------------------------------------------
 
 def ago(then: datetime, now: datetime) -> str:
+    """Return how long before `now` the time `then` was, in the largest sensible unit (seconds up to days)."""
     seconds = max(0, int((now - then).total_seconds()))
     for limit, unit, size in ((90, "second", 1), (5400, "minute", 60), (172800, "hour", 3600)):
         if seconds < limit:
@@ -186,6 +257,16 @@ def ago(then: datetime, now: datetime) -> str:
 
 
 def status_lines(registry: Registry, ledger: Ledger, *, now: datetime | None = None) -> list[str]:
+    """Return one line per store: its size, last recorded entry and last snapshot, without recording anything.
+
+    Reads the ledger and lists each store, but does not sync, so the ledger is unchanged. An Open WebUI store in
+    Docker is read from the copy already on disk. A store that cannot be read gets a line saying so.
+
+    Args:
+        registry: The stores to describe.
+        ledger: The ledger to read entries and snapshots from.
+        now: The time ages are measured from; the current time when omitted.
+    """
     now = now or datetime.now(timezone.utc)
     entries = ledger.entries()
     snapshots = ledger.list_snapshots()
@@ -227,9 +308,21 @@ def store_hints(store: StoreConfig, *, limit: int = 10, budget: float = 3.0, ref
 # -- snapshots a person asks for -------------------------------------------------------------------------------------------
 
 def alarms_since_snapshot(ledger: Ledger, backend: str, scope: dict[str, str], *, limit: int = 50) -> list[tuple[str, str]]:
-    """What the ledger recorded about one store since its latest snapshot that a person should look at before a NEW snapshot is
-    taken and later trusted as "good": changes made outside the store's own history, and changes whose wording looks suspicious.
-    It is worked out from the ledger every time, so it does not go away once it has been shown (or looked past).
+    """List what a person should look at before a new snapshot is taken and later trusted as "good".
+
+    These are the ledger's records about one store since its latest snapshot: changes made outside the store's own
+    history, and added or edited memories whose wording looks suspicious. They are worked out from the ledger every
+    time, so they do not go away once shown (or looked past). Reads the ledger only.
+
+    Args:
+        ledger: The ledger to read.
+        backend: The backend name of the store.
+        scope: The store's scope within the ledger.
+        limit: The most findings to return.
+
+    Returns:
+        (memory id, reason) pairs in ledger order; one per flagged entry, with the first warning's message for
+        suspicious wording.
     """
     snapshots = [info for info in ledger.list_snapshots() if info.backend == backend and info.scope == scope]
     start = max((info.ledger_seq for info in snapshots), default=0)

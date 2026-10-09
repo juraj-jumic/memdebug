@@ -61,14 +61,21 @@ _BACKUP_REF_RE = re.compile(r"^refs/memdebug/backups/[0-9]{8}T[0-9]{6}Z-[0-9a-f]
 
 
 def canonical(event: MemoryEvent) -> str:
+    """The canonical JSON text of an event (sorted keys, no spaces): the form that is hashed and stored."""
     return json.dumps(event.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
 def compute_hash(prev_hash: str, event_id: str, payload: str) -> str:
+    """The SHA-256 chain hash (hex) of an entry, from the previous hash, its event id and its canonical payload."""
     return hashlib.sha256(f"{prev_hash}|{event_id}|{payload}".encode()).hexdigest()
 
 
 def parse_snapshot_id(value: object) -> int:
+    """The number in a snapshot id such as "s3".
+
+    Raises:
+        SnapshotError: If the value is not a string of the form s1, s2, s3 ... (no leading zero, at most 9 digits).
+    """
     match = _SNAPSHOT_ID_RE.match(value) if isinstance(value, str) else None
     if not match:
         raise SnapshotError("a snapshot id looks like s1, s2, s3 ...")
@@ -90,8 +97,9 @@ def snapshot_digest(
     number: int, backend: str, scope: dict, taken_at: str, ledger_seq: int, ledger_head: str,
     complete: bool, label: str | None, entries: list[list],
 ) -> str:
-    """Hash of everything that defines a snapshot. The ledger chain stores this value, so a
-    snapshot cannot be altered without the chain noticing.
+    """Hash of everything that defines a snapshot.
+
+    The ledger chain stores this value, so a snapshot cannot be altered without the chain noticing.
     """
     body = {
         "id": number, "backend": backend, "scope": scope, "taken_at": taken_at,
@@ -102,8 +110,16 @@ def snapshot_digest(
 
 
 def validate_rollback_details(value: object) -> dict:
-    """The facts a rollback record may hold, checked strictly: it is written by us, but read back from a file that
-    anyone could edit, so everything is verified again when the ledger is verified.
+    """The facts a rollback record may hold, checked strictly.
+
+    The record is written by us, but read back from a file that anyone could edit, so everything is verified
+    again when the ledger is verified.
+
+    Returns:
+        The value itself, unchanged, when it passes.
+
+    Raises:
+        ValueError: If the fields, snapshot ids, commit ids, backup reference or file entries are not as expected.
     """
     if not isinstance(value, dict) or set(value) != {"target", "before_snapshot", "after_snapshot", "commit",
                                                      "previous_head", "backup", "file_count", "files"}:
@@ -132,8 +148,9 @@ def validate_rollback_details(value: object) -> dict:
 
 
 def _snap_key(event: MemoryEvent) -> str | None:
-    """Index key for snapshot bookkeeping events, kept apart from backend row ids so that no
-    backend can ever collide with it.
+    """Index key for snapshot bookkeeping events, or None for any other event.
+
+    Kept apart from backend row ids so that no backend can ever collide with it.
     """
     if event.op not in META_OPS:
         return None
@@ -176,11 +193,34 @@ def _prepare_file(path: Path) -> None:
 
 @dataclass
 class VerifyResult:
+    """The outcome of checking a ledger.
+
+    Attributes:
+        ok: True when no problems were found.
+        problems: One plain-words line per problem found.
+    """
+
     ok: bool = True
     problems: list[str] = field(default_factory=list)
 
 
 class Ledger:
+    """An append-only, hash-chained event ledger in a SQLite file.
+
+    Events and snapshots are written only through this class's methods. Opening a writable ledger creates the file
+    (owner-only on POSIX) if it does not exist and upgrades an older schema in place. A read-only ledger never
+    writes, creates or upgrades anything, and every writing method raises LedgerError on it.
+
+    Args:
+        path: The ledger file.
+        readonly: Open the file in SQLite's read-only mode.
+        busy_timeout: Seconds to wait for a locked file in read-only mode. A writable ledger always waits 30 seconds.
+
+    Raises:
+        LedgerError: If the file cannot be opened, is a symlink or not a regular file, or is not a ledger of a
+            supported version (a read-only open also refuses an older version).
+    """
+
     def __init__(self, path: str | Path, *, readonly: bool = False, busy_timeout: float = 5.0):
         self.path = Path(path)
         self._readonly = readonly
@@ -198,8 +238,9 @@ class Ledger:
 
     @classmethod
     def open_readonly(cls, path: str | Path, *, busy_timeout: float = 5.0) -> "Ledger":
-        """Open an existing ledger so that nothing can be written: the file is opened with SQLite's
-        read-only mode, never created and never upgraded. Used by the viewer.
+        """Open an existing ledger so that nothing can be written.
+
+        The file is opened with SQLite's read-only mode, never created and never upgraded. Used by the viewer.
         """
         return cls(path, readonly=True, busy_timeout=busy_timeout)
 
@@ -233,6 +274,7 @@ class Ledger:
             raise LedgerError("this ledger was opened read-only")
 
     def close(self) -> None:
+        """Close the database connection."""
         self._db.close()
 
     # -- internals -------------------------------------------------------------------
@@ -351,11 +393,13 @@ class Ledger:
             raise LedgerError(f"ledger write failed: {exc}") from exc
 
     def append(self, event: MemoryEvent) -> LedgerEntry:
+        """Append one event, with the same rules as append_many."""
         return self.append_many([event])[0]
 
     # -- reading ---------------------------------------------------------------------
 
     def head(self) -> str:
+        """The hash of the newest entry, or the all-zero genesis hash when the ledger is empty."""
         row = self._db.execute("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
         return row[0] if row else GENESIS
 
@@ -364,10 +408,12 @@ class Ledger:
         return {row[0] for row in self._db.execute("SELECT DISTINCT backend FROM events") if row[0]}
 
     def has_events(self, backend: str) -> bool:
+        """Whether any event is on record for the store type."""
         row = self._db.execute("SELECT 1 FROM events WHERE backend = ? LIMIT 1", (backend,)).fetchone()
         return row is not None
 
     def known_refs(self, backend: str) -> set[str]:
+        """The backend row ids of the history entries already recorded for the store type."""
         rows = self._db.execute(
             "SELECT ref FROM events WHERE backend = ? AND ref IS NOT NULL", (backend,)
         ).fetchall()
@@ -384,6 +430,11 @@ class Ledger:
         return LedgerEntry(seq=seq, id=event_id, event=event, prev_hash=prev, hash=digest)
 
     def entries(self) -> list[LedgerEntry]:
+        """Every entry in the ledger, oldest first.
+
+        Raises:
+            LedgerError: If an entry cannot be read back as an event.
+        """
         rows = self._db.execute(
             "SELECT seq, id, payload, prev_hash, hash FROM events ORDER BY seq"
         ).fetchall()
@@ -404,8 +455,18 @@ class Ledger:
     def events_page(
         self, *, before_seq: int | None = None, limit: int = 50, op: str | None = None, trust: str | None = None
     ) -> list[LedgerEntry]:
-        """Newest-first page of events. All filter values are checked against fixed lists and passed
-        as bound parameters.
+        """Newest-first page of events.
+
+        All filter values are checked against fixed lists and passed as bound parameters.
+
+        Args:
+            before_seq: Only entries with a lower seq than this (to continue after a previous page).
+            limit: The page size, from 1 to 500.
+            op: Only entries of this kind (an Op value).
+            trust: Only entries with this trust (a Trust value).
+
+        Raises:
+            LedgerError: If an argument is out of range or not a known value, or an entry cannot be read.
         """
         if not (isinstance(limit, int) and 1 <= limit <= 500):
             raise LedgerError("limit must be between 1 and 500")
@@ -429,6 +490,11 @@ class Ledger:
         return [self._entry_from_row(*row) for row in rows]
 
     def get_entry(self, event_id: str) -> LedgerEntry | None:
+        """The entry with the given id (such as "e12"), or None if there is none.
+
+        Raises:
+            LedgerError: If the id is not of the form e1, e2, e3 ..., or the entry cannot be read.
+        """
         if not (isinstance(event_id, str) and _EVENT_ID_RE.match(event_id)):
             raise LedgerError("an event id looks like e1, e2, e3 ...")
         row = self._db.execute(
@@ -437,6 +503,15 @@ class Ledger:
         return self._entry_from_row(*row) if row else None
 
     def verify(self, expected_head: str | None = None) -> VerifyResult:
+        """Check the whole ledger and report every problem found; nothing is changed.
+
+        Checks the sequence, the hash links, each entry's content against its index columns, and the stored snapshots
+        against their records in the chain.
+
+        Args:
+            expected_head: A head hash recorded elsewhere (for example by a snapshot). If given, a different current
+                head is reported, which is how removal of the newest entries is noticed.
+        """
         result = VerifyResult()
         rows = self._db.execute(
             "SELECT seq, id, backend, ref, snap, payload, prev_hash, hash, op, trust FROM events ORDER BY seq"
@@ -622,6 +697,11 @@ class Ledger:
         return info
 
     def list_snapshots(self) -> list[SnapshotInfo]:
+        """The header of every stored snapshot, oldest first, each checked against its own hash.
+
+        Raises:
+            SnapshotError: If a snapshot is unreadable or was changed after it was saved.
+        """
         infos: list[SnapshotInfo] = []
         for (number,) in self._db.execute("SELECT id FROM snapshots ORDER BY id").fetchall():
             infos.append(self._snapshot_from_db(number)[0])
@@ -662,8 +742,18 @@ class Ledger:
         return Snapshot(info=info, memories=memories)
 
     def delete_snapshot(self, snapshot_id: str) -> SnapshotInfo:
-        """Remove a snapshot. The deletion is chained into the ledger, so it cannot be done silently.
-        Texts no other snapshot uses are removed too.
+        """Remove a snapshot.
+
+        The deletion is chained into the ledger, so it cannot be done silently. Texts no other snapshot uses are
+        removed too.
+
+        Returns:
+            The header of the snapshot that was removed.
+
+        Raises:
+            LedgerError: If the ledger was opened read-only.
+            SnapshotError: If the id is malformed, the snapshot does not exist or is damaged, or the delete fails.
+            LedgerConflictError: If another writer collided with the write.
         """
         self._require_writable()
         number = parse_snapshot_id(snapshot_id)
@@ -684,8 +774,23 @@ class Ledger:
         return info
 
     def record_rollback(self, backend: str, scope: dict[str, str], details: dict, *, ts: datetime) -> LedgerEntry:
-        """Chain a record of a completed rollback into the ledger. Only this method can write one, so a rollback
-        cannot be claimed (or hidden) by appending an ordinary event.
+        """Chain a record of a completed rollback into the ledger.
+
+        Only this method can write one, so a rollback cannot be claimed (or hidden) by appending an ordinary event.
+
+        Args:
+            backend: The store type that was rolled back.
+            scope: The scope of the store.
+            details: The rollback facts, checked by validate_rollback_details.
+            ts: When the rollback happened; must carry a timezone.
+
+        Returns:
+            The entry that was appended.
+
+        Raises:
+            LedgerError: If the ledger was opened read-only, the time has no timezone, the details are invalid, or
+                the write fails.
+            LedgerConflictError: If another writer collided with the write.
         """
         self._require_writable()
         if ts.tzinfo is None:

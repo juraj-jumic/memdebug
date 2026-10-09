@@ -45,6 +45,20 @@ RULES = {
 
 @dataclass
 class Finding:
+    """One thing in a report that may need a person's attention.
+
+    Attributes:
+        rule: The identifier of the rule that raised it, a key of `RULES`.
+        level: "error", "warning" or "note".
+        message: A short description of the finding.
+        memory_id: The memory it concerns, if any.
+        event_id: The ledger entry that recorded it, if any.
+        when: When that entry was recorded, as UTC timestamp text.
+        before: The memory's text before the change, if any.
+        after: The memory's text after the change, if any.
+        evidence: The wording that raised a "hint" finding.
+    """
+
     rule: str
     level: str
     message: str
@@ -58,6 +72,22 @@ class Finding:
 
 @dataclass
 class Report:
+    """The content of a report on a ledger, before it is rendered to a format.
+
+    Attributes:
+        generated_at: When the report was built, as UTC timestamp text.
+        tool_version: The memdebug version that built it.
+        ledger_name: A display name for the ledger.
+        integrity_ok: Whether the ledger passed its integrity check.
+        integrity_problems: What the integrity check found, if anything.
+        witness: The result of checking the ledger against a witness file, if one was given.
+        counts: Totals for entries, snapshots, changes outside the store's history, untrusted memories, rollbacks and hints.
+        findings: The things that may need a look, at most `MAX_FINDINGS` of the per-entry kind.
+        rollbacks: One dict per rollback recorded in the ledger.
+        snapshots: One dict per snapshot in the ledger.
+        truncated: Whether the findings were cut off at `MAX_FINDINGS`.
+    """
+
     generated_at: str
     tool_version: str
     ledger_name: str
@@ -72,10 +102,16 @@ class Report:
 
     @property
     def hinted(self) -> bool:
+        """Whether any finding is a wording hint."""
         return any(f.rule == "hint" for f in self.findings)
 
     @property
     def attention(self) -> bool:
+        """Whether something needs a look.
+
+        True if the integrity check failed, the witness disagrees, or any finding is a warning or an error. Wording hints
+        alone do not count.
+        """
         return (not self.integrity_ok or (self.witness is not None and not self.witness.ok)
                 or any(f.level in ("warning", "error") for f in self.findings))
 
@@ -91,6 +127,17 @@ def _text(value: str | None) -> str | None:
 
 def build_report(ledger: Ledger, *, ledger_name: str = "ledger", witness: WitnessCheck | None = None,
                  now: datetime | None = None) -> Report:
+    """Read a ledger and build a report on it.
+
+    The ledger's integrity is verified and every entry is looked at. Memory text is made visible with `safe_text` and cut to
+    `MAX_TEXT` characters. Nothing is written.
+
+    Args:
+        ledger: The ledger to report on.
+        ledger_name: A display name for the ledger, shown in the report.
+        witness: The result of checking the ledger against a witness file, if one was checked.
+        now: The time to record as the generation time. Defaults to the current time.
+    """
     verdict = ledger.verify()
     counts = ledger.counts()
     report = Report(
@@ -155,6 +202,10 @@ def _code_span(text: str) -> str:
 
 
 def to_markdown(report: Report) -> str:
+    """Render the report as Markdown for a person to read.
+
+    Memory text only appears inside code fences or code spans longer than any run of backticks in it.
+    """
     out = ["# memdebug report", "",
            f"Generated {report.generated_at} by memdebug {report.tool_version}. Ledger: {_code_span(report.ledger_name)}.", ""]
     verdict = "INTACT" if report.integrity_ok else "PROBLEMS FOUND"
@@ -204,6 +255,7 @@ def to_markdown(report: Report) -> str:
 # -- JSON -----------------------------------------------------------------------------------------------------------
 
 def to_dict(report: Report) -> dict:
+    """The report as a JSON-serialisable dict, with an `attention` flag added."""
     return {
         "tool": {"name": "memdebug", "version": report.tool_version}, "generated_at": report.generated_at, "ledger": report.ledger_name,
         "integrity": {"ok": report.integrity_ok, "problems": report.integrity_problems},
@@ -217,6 +269,7 @@ def to_dict(report: Report) -> dict:
 
 
 def to_json(report: Report) -> str:
+    """Render the report as indented, ASCII-only JSON ending in a newline."""
     return json.dumps(to_dict(report), indent=2, ensure_ascii=True) + "\n"
 
 
@@ -226,6 +279,11 @@ _PATHLIKE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-/ ]{0,200}\.[A-Za-z0-9]{1,8}
 
 
 def to_sarif(report: Report) -> str:
+    """Render the report as SARIF 2.1.0 JSON, for CI and code-scanning dashboards.
+
+    A finding's memory id becomes a file location only if it looks like a plain relative file name; it is always given as a
+    logical location.
+    """
     rules = [{"id": rid, "name": rid, "shortDescription": {"text": short}, "fullDescription": {"text": full},
               "defaultConfiguration": {"level": level}} for rid, (short, level, full) in RULES.items()]
     results = []
@@ -247,8 +305,13 @@ RENDERERS = {"markdown": to_markdown, "json": to_json, "sarif": to_sarif}
 
 
 def write_report(path, text: str, *, force: bool = False) -> None:
-    """Write a report file. It contains memory text, so it is created private; an existing file is only replaced
-    with `force`, and links and folders are refused.
+    """Write a report file.
+
+    It contains memory text, so it is created private; an existing file is only replaced with `force`, and links and folders
+    are refused. The text is written to a temporary file beside the target and then moved into place.
+
+    Raises:
+        MemdebugError: If the target is a link or a folder, already exists without `force`, or its folder does not exist.
     """
     from pathlib import Path
 

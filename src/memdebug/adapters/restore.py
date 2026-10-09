@@ -61,6 +61,29 @@ _REGULAR = ("100644", "100755")
 
 @dataclass
 class Item:
+    """One file a rollback would change, with what is on disk now and what it would hold afterwards.
+
+    Used by both rollback engines. All paths are relative to the store root, with "/" separators.
+
+    Attributes:
+        path: The file, relative to the store root.
+        action: "restore" (change a file back), "recreate" (put back a deleted file) or "remove" (delete a file added
+            since the snapshot).
+        source: Where the new content comes from: "git" (the original bytes), "snapshot" (rebuilt from the snapshot's
+            text) or "none" (a removal).
+        live_bytes: What the file holds now, or None if it does not exist.
+        live_text: `live_bytes` as normalised text (line endings changed, undecodable bytes replaced).
+        target_bytes: What the file would hold afterwards; None for a removal.
+        target_text: The snapshot's text for the file; None for a removal.
+        target_sha: The git blob the bytes came from, if any.
+        head_mode: The file's mode in HEAD; None when git does not track it.
+        head_bytes: The file's committed content, or None when git does not track it.
+        commit: Whether the change is part of the new commit (always False for plain folders).
+        backup: Whether the live content is saved first because git does not already hold it.
+        note: A short human-readable explanation of how the new content was obtained.
+        head_sha: The committed blob, so that a failed apply can put the index back.
+    """
+
     path: str
     action: str              # restore: change a file back; recreate: put back a deleted file; remove: delete a file added since
     source: str              # "git": the original bytes; "snapshot": rebuilt from the snapshot's text; "none": a removal
@@ -79,6 +102,24 @@ class Item:
 
 @dataclass
 class Plan:
+    """What a rollback to one snapshot would do, worked out without changing anything.
+
+    Used by both rollback engines. A plan with `blockers` cannot be applied.
+
+    Attributes:
+        snapshot_id: The snapshot being restored.
+        store: The store the plan is for.
+        branch: The branch a git rollback would commit to, if it is usable (git stores only).
+        head: The commit that branch was at when the plan was made (git stores only).
+        items: The files that would change, sorted by path.
+        unchanged: How many snapshot files already match the store.
+        kept_new: Files added since the snapshot that the rollback leaves alone.
+        skipped: A (path, reason) pair for each file the rollback will not touch.
+        warnings: Notes that do not stop the rollback.
+        blockers: Reasons the rollback cannot be applied now.
+        plan_id: A digest of what the plan would do. `apply` refuses to run if a fresh plan has a different one.
+    """
+
     snapshot_id: str
     store: str
     branch: str | None = None
@@ -93,11 +134,27 @@ class Plan:
 
     @property
     def commits(self) -> bool:
+        """Whether applying the plan would create a git commit."""
         return any(i.commit for i in self.items)
 
 
 @dataclass
 class Outcome:
+    """What an applied rollback did.
+
+    Used by both rollback engines.
+
+    Attributes:
+        snapshot_id: The snapshot that was restored.
+        branch: The branch that was committed to; None for plain folders.
+        previous_head: The commit the branch was at before; None for plain folders.
+        commit: The new commit, or None when no commit was made.
+        backup_ref: Where what was replaced was saved, or None if nothing needed saving. A git ref for a git store; for
+            a plain folder, a name in the same form that identifies a backup folder.
+        items: The files that were changed.
+        backup_path: Where the backup is, when it is a folder on disk (plain-folder stores) rather than a git ref.
+    """
+
     snapshot_id: str
     branch: str | None
     previous_head: str | None
@@ -118,7 +175,10 @@ def _plan_id(plan: Plan) -> str:
 
 
 def snapshot_text_problem(text: str) -> str | None:
-    """Why this snapshot text must not be written back into a file, or None if it is faithful."""
+    """Says why this snapshot text must not be written back into a file, or None if it is faithful.
+
+    Refuses text that is only a size marker, that was cut, or that held undecodable bytes.
+    """
     if text.startswith(_TOO_LARGE):
         return "the snapshot only holds a size marker for this file"
     if _CUT_MARKER.search(text):
@@ -129,6 +189,12 @@ def snapshot_text_problem(text: str) -> str | None:
 
 
 class Restorer(FileOps):
+    """The rollback engine for a markdown/git store (see the module docstring for its rules).
+
+    Use `plan` to see what a rollback would do, and `apply` to do it. Only `apply` writes, and it writes to the working
+    tree, the git object store, the branch ref and the index of the adapter's repository.
+    """
+
     def __init__(self, adapter: MarkdownGitAdapter):
         self._adapter = adapter
         self._git = adapter.git
@@ -246,6 +312,22 @@ class Restorer(FileOps):
         return None
 
     def plan(self, snapshot: Snapshot, *, only: Sequence[str] = (), remove_added: bool = False) -> Plan:
+        """Compares the snapshot with the repository and reports what a rollback would do. Writes nothing.
+
+        Only runs read-only git commands and reads the working tree. Unsafe states (a detached HEAD, staged changes, an
+        operation in progress, a lock file, names that differ only by letter case, too many files) are reported as
+        blockers on the returned plan, and files that cannot be safely written are listed in `skipped`.
+
+        Args:
+            snapshot: The snapshot to restore.
+            only: Restrict the plan to these files. Empty means every file in the snapshot.
+            remove_added: Also plan to remove files added since the snapshot. This is done only when both the snapshot and
+                the current listing are complete; otherwise a warning is given and nothing is removed.
+
+        Raises:
+            RestoreError: If the snapshot is from a different store, a name in `only` is not a usable memory file name, or
+                a name in `only` is in neither the snapshot nor the store.
+        """
         info = snapshot.info
         adapter = self._adapter
         if info.backend != adapter.name or info.scope != {"store": adapter.store}:
@@ -397,7 +479,28 @@ class Restorer(FileOps):
 
     def apply(self, snapshot: Snapshot, *, expected_plan_id: str, only: Sequence[str] = (), remove_added: bool = False,
               now: datetime | None = None) -> Outcome:
-        """Carry out the plan the person confirmed. Re-plans first and refuses if anything has changed since."""
+        """Carry out the plan the person confirmed. Re-plans first and refuses if anything has changed since.
+
+        This is the only method that writes. It first saves anything it would overwrite or delete that git does not
+        already hold (under refs/memdebug/backups/), then makes one new commit on the branch if any change must be
+        committed, then updates the index and the working tree. If any step fails, the files, the branch and the index
+        are put back (a backup ref that was already made is kept).
+
+        Args:
+            snapshot: The snapshot to restore.
+            expected_plan_id: The `plan_id` of the plan the person confirmed.
+            only: The same restriction that was given to `plan`.
+            remove_added: The same setting that was given to `plan`.
+            now: The time to record in the commit and the backup name; defaults to the current time.
+
+        Returns:
+            What was done. If the plan has nothing to change, nothing is written and the outcome has no commit.
+
+        Raises:
+            RestoreError: If the new plan has blockers, differs from the confirmed plan, or a step fails. The message
+                says whether the rollback was undone; if it could not be fully undone, it lists what remains and names
+                the backup ref.
+        """
         now = now or datetime.now(timezone.utc)
         plan = self.plan(snapshot, only=only, remove_added=remove_added)
         if plan.blockers:

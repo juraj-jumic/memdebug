@@ -17,6 +17,11 @@ def rollback_details(event: MemoryEvent) -> dict | None:
 
 
 def describe_event(event: MemoryEvent) -> str:
+    """A one-line description of an event: a summary for snapshot and rollback records, otherwise the memory's text.
+
+    For ADD, UPDATE, DELETE and EXTERNAL events this is the text after the change, or the text before it when
+    nothing remains. The result can contain memory text and is not escaped, so the caller must make it safe to show.
+    """
     if event.op.value == "SNAPSHOT":
         try:
             info = json.loads(event.after or "{}")

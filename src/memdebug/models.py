@@ -26,6 +26,8 @@ def _check_scope(value: dict[str, str]) -> dict[str, str]:
 
 
 class Op(str, Enum):
+    """The kind of an event in the ledger."""
+
     ADD = "ADD"
     UPDATE = "UPDATE"
     DELETE = "DELETE"
@@ -39,12 +41,16 @@ META_OPS = frozenset({Op.SNAPSHOT, Op.SNAPSHOT_DELETED, Op.ROLLBACK})  # about t
 
 
 class Trust(str, Enum):
+    """How far the origin of a memory write can be relied on."""
+
     TRUSTED = "trusted"
     UNTRUSTED = "untrusted"
     UNKNOWN = "unknown"
 
 
 class SourceKind(str, Enum):
+    """What kind of input a memory write came from."""
+
     USER_MESSAGE = "user_message"
     TOOL_RESULT = "tool_result"
     CONSOLIDATION = "consolidation"
@@ -52,9 +58,19 @@ class SourceKind(str, Enum):
 
 
 class Source(BaseModel):
-    """Where a memory write came from. Session fields are filled by a session-source adapter
-    (milestone 7). actor_id and role are whatever the backend recorded; they are not trusted
-    to decide the source kind.
+    """Where a memory write came from.
+
+    Session fields are filled by a session-source adapter (milestone 7). actor_id and role are whatever the
+    backend recorded; they are not trusted to decide the source kind.
+
+    Attributes:
+        session_id: The chat or agent session the write happened in.
+        turn: The turn within the session.
+        kind: What kind of input the write came from.
+        actor_id: The actor the backend recorded.
+        role: The role the backend recorded.
+        note: What was observed about where the write came from, in words. Descriptive only: it never decides
+            the kind or the trust.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -81,6 +97,25 @@ def derive_trust(source: Source | None) -> Trust:
 
 
 class MemoryEvent(BaseModel):
+    """One change to one memory, as it is recorded in the ledger.
+
+    Field sizes are bounded and the timestamp must carry a timezone.
+
+    Attributes:
+        backend: The type of store the memory lives in.
+        memory_id: The memory's id within the store.
+        op: The kind of event.
+        ts: When the event happened or was noticed (see ts_observed).
+        ts_observed: True when ts is when memdebug saw the change, not when the backend wrote it.
+        backend_ref: The backend's own row id for the history entry, used to avoid recording a row twice.
+        scope: The scope the memory belongs to, as key-value pairs.
+        before: The text before the change, or None.
+        after: The text after the change, or None.
+        source: What is known about where the write came from.
+        trust: How far the source can be relied on. The ledger fills in a value derived from the source
+            when an event is appended with an unknown trust and a source.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     backend: str = Field(min_length=1, max_length=64)
@@ -109,6 +144,16 @@ class MemoryEvent(BaseModel):
 
 
 class LedgerEntry(BaseModel):
+    """An event as stored in the ledger, with its place in the hash chain.
+
+    Attributes:
+        seq: The position in the ledger, starting at 1.
+        id: The entry id, "e" followed by seq.
+        event: The recorded event.
+        prev_hash: The hash of the previous entry (all zeros for the first one).
+        hash: The hash of this entry, computed from prev_hash, id and the event.
+    """
+
     seq: int
     id: str
     event: MemoryEvent
@@ -133,7 +178,19 @@ class Memory(BaseModel):
 
 
 class SnapshotInfo(BaseModel):
-    """What is known about a snapshot without loading its memories."""
+    """What is known about a snapshot without loading its memories.
+
+    Attributes:
+        id: The snapshot id: "s" followed by a number, such as s1.
+        backend: The type of store the snapshot was taken from.
+        scope: The scope the snapshot covers.
+        taken_at: When the snapshot was taken.
+        ledger_seq: The seq of the newest ledger entry when the snapshot was taken (0 for an empty ledger).
+        ledger_head: The ledger's head hash at that point.
+        complete: False when the listing may have been cut short, so a memory's absence proves nothing.
+        label: An optional short note about the snapshot.
+        count: The number of memories in the snapshot.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -154,5 +211,12 @@ class SnapshotInfo(BaseModel):
 
 
 class Snapshot(BaseModel):
+    """A snapshot with its memories loaded.
+
+    Attributes:
+        info: The snapshot's header.
+        memories: The memories the snapshot holds.
+    """
+
     info: SnapshotInfo
     memories: list[Memory]

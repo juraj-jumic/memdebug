@@ -114,6 +114,12 @@ class _VerifyCache:
 
 
 class ViewerState:
+    """What the request handlers share: the ledger path, the access secret and what a request may claim.
+
+    It holds the allowed Host and Origin values, the names of the two cookies, the limit on concurrent requests
+    and the cached result of the last integrity check.
+    """
+
     def __init__(self, ledger_path: Path, port: int, token: str):
         self.ledger_path = ledger_path
         self.token = token
@@ -129,11 +135,33 @@ class ViewerState:
 
 
 class ViewerServer(http.server.ThreadingHTTPServer):
+    """The viewer's HTTP server, bound to 127.0.0.1 only.
+
+    It takes the port exclusively on Windows and hangs up on connections beyond a fixed cap. Each connection
+    is served on its own daemon thread, and the request checks described in the module docstring are applied
+    by the request handler.
+
+    Attributes:
+        token: The secret that the link printed to the terminal must carry.
+        state: The state shared by the request handlers.
+    """
+
     daemon_threads = True
     allow_reuse_address = False  # never share the port
     request_queue_size = 16
 
     def __init__(self, ledger_path: str | Path, port: int = 0, token: str | None = None):
+        """Check that the ledger can be opened read-only, then start listening.
+
+        Args:
+            ledger_path: The ledger file to show.
+            port: The port to listen on; 0 lets the system choose a free one.
+            token: The access secret. A random 192-bit one is made when it is None.
+
+        Raises:
+            LedgerError: If the ledger cannot be opened read-only. Nothing is bound in that case.
+            ValueError: If the port is not between 0 and 65535.
+        """
         path = Path(ledger_path)
         Ledger.open_readonly(path).close()  # fail early, before binding anything
         if not (isinstance(port, int) and 0 <= port <= 65535):
@@ -144,6 +172,7 @@ class ViewerServer(http.server.ThreadingHTTPServer):
         self.state = ViewerState(path, self.server_address[1], self.token)
 
     def process_request(self, request, client_address) -> None:
+        """Serve the connection on a new thread, or close it at once when MAX_CONNECTIONS are already open."""
         # One thread per connection would let idle connections pile up; beyond the cap, hang up at once.
         if not self._connection_slots.acquire(blocking=False):
             self.shutdown_request(request)
@@ -151,12 +180,14 @@ class ViewerServer(http.server.ThreadingHTTPServer):
         super().process_request(request, client_address)
 
     def process_request_thread(self, request, client_address) -> None:
+        """Serve one connection, then free its slot in the connection cap."""
         try:
             super().process_request_thread(request, client_address)
         finally:
             self._connection_slots.release()
 
     def server_bind(self) -> None:
+        """Bind the socket to 127.0.0.1, taking the port exclusively on Windows so no other program can share it."""
         if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
             # Without this, Windows lets another program bind the same port and receive requests.
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
@@ -165,10 +196,12 @@ class ViewerServer(http.server.ThreadingHTTPServer):
 
     @property
     def port(self) -> int:
+        """The port the server is listening on."""
         return self.server_address[1]
 
     @property
     def url(self) -> str:
+        """The full link that opens the viewer, including the secret token. Show it only to the person using the viewer."""
         return f"http://{LOOPBACK}:{self.port}/?token={self.token}"
 
 
@@ -302,8 +335,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     @staticmethod
     def _local_target(path: str, query: dict) -> str:
-        """A page address rebuilt from parts that are known to be safe: a real page, and only the inputs that page
-        reads, each matching a strict pattern. Anything else is dropped, so this can never point elsewhere.
+        """A page address rebuilt from parts that are known to be safe.
+
+        It is a real page, plus only the inputs that page reads, each matching a strict pattern. Anything else
+        is dropped, so this can never point elsewhere.
         """
         if not any(rx.match(path) for name, rx in _ROUTES if name not in ("theme", "style")):
             return "/"

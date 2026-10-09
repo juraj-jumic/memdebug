@@ -77,6 +77,7 @@ def _need_git() -> str:
 
 
 def check_info() -> str:
+    """Describe this machine (platform, Python and git versions) for the report's environment line. Proves nothing."""
     git = find_git()
     version = _git_version(git) if git else None
     return (f"{sys.platform}, python {sys.version.split()[0]}, "
@@ -85,6 +86,11 @@ def check_info() -> str:
 
 
 def check_git_ignores_global_config() -> str:
+    """Prove that git run by memdebug does not read a global config file.
+
+    Control: git without the isolation setting reads a planted ~/.gitconfig (SKIP if it does not). Then git with
+    the isolated environment is asked for the same key and must not see it.
+    """
     git = _need_git()
     with _tmp() as home:
         Path(home, ".gitconfig").write_text("[memdebugtest]\n\tkey = leaked\n", encoding="utf-8")
@@ -100,8 +106,21 @@ def check_git_ignores_global_config() -> str:
 
 
 def _config_trap_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
-    """A repository whose config names the tripwire for every setting that makes git run a program when it shows a diff, pages output, checks
-    the file system or opens an editor. One marker, `<prefix>-config`. (The tripwire and its helpers are defined further down, with the rollback check.)
+    """Build a repository whose config names the tripwire for every setting that makes git run a program.
+
+    Those settings are the ones git uses when it shows a diff, pages output, checks the file system or opens an
+    editor. There is one marker, `<prefix>-config`. (The tripwire and its helpers are defined further down, with
+    the rollback check.)
+
+    Args:
+        git: Path of the git executable.
+        root: A new folder to create; the repository goes in `root/repo`.
+        trap: The tripwire script that every configured program points at.
+        prefix: Names the marker file, so repositories made with different prefixes never share one.
+        markers_dir: Where the marker goes; `root` when omitted.
+
+    Returns:
+        The repository and its marker.
     """
     root.mkdir(parents=True)
     repo = root / "repo"
@@ -127,6 +146,12 @@ def _run_config_control(git: str, hostile: _Hostile) -> bool:
 
 
 def check_hostile_repo_config_cannot_run_programs() -> str:
+    """Prove that reading a repository whose config names programs runs none of them.
+
+    Control: ordinary git, asked for a patch with external diff allowed, runs the tripwire in a first repository
+    (SKIP if it does not). Then memdebug's adapter reads history and notes of a second, identical repository
+    and its own marker must stay absent.
+    """
     git = _need_git()
     with _tmp() as base:
         base_path = Path(base)
@@ -148,6 +173,12 @@ def check_hostile_repo_config_cannot_run_programs() -> str:
 
 
 def check_history_file_is_read_only() -> str:
+    """Prove that the Mem0 history database is opened read-only and a missing one is not created.
+
+    There is no control. The adapter's connection is made to try a write even after `query_only` is switched
+    off, and must refuse; the file's hash must be unchanged; opening an adapter on a missing path must not
+    create the file.
+    """
     class _Stub:
         def get_all(self, **kw):
             return {"results": []}
@@ -190,6 +221,11 @@ def check_history_file_is_read_only() -> str:
 
 
 def check_hung_process_tree_is_killed() -> str:
+    """Prove that a stalled process and the child it started are both stopped after the timeout.
+
+    There is no control. A process starts a sleeping child and itself sleeps for 40 seconds, with a 1 second
+    timeout. Reading its output only returns once every holder of the pipe is gone, and that must happen within 15 seconds.
+    """
     code = ("import subprocess, sys, time; "
             "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(40)']); time.sleep(40)")
     errfile = tempfile.TemporaryFile()
@@ -210,6 +246,11 @@ def check_hung_process_tree_is_killed() -> str:
 
 
 def check_symlinks_are_not_followed() -> str:
+    """Prove that a note which is a symlink to a secret file is not read.
+
+    The link is made first (SKIP where symlinks cannot be created), then the adapter's file reader is pointed
+    at it and must return nothing and leak none of the secret into its warnings.
+    """
     with _tmp() as base:
         secret = Path(base) / "secret.txt"
         secret.write_text("TOP SECRET TOKEN", encoding="utf-8")
@@ -226,6 +267,11 @@ def check_symlinks_are_not_followed() -> str:
 
 
 def check_junctions_are_not_followed() -> str:
+    """Prove that a Windows directory junction pointing outside a repository is not followed.
+
+    SKIP off Windows or where the junction cannot be made. The adapter lists the repository; it must not return
+    the secret file behind the junction and must mark the listing incomplete.
+    """
     if os.name != "nt":
         raise _Skip("Windows only")
     git = _need_git()
@@ -249,6 +295,11 @@ def check_junctions_are_not_followed() -> str:
 
 
 def check_dangerous_names_are_rejected() -> str:
+    """Prove that the note-name validator rejects reserved and unsafe paths and accepts ordinary ones.
+
+    Runs a fixed list of hostile names (device names, `..`, drive letters, trailing dots, 8.3 aliases and the
+    like) and a short list of good ones through the validator. No control is needed: it is a pure function.
+    """
     bad = ["NUL.md", "con.md", "aux/x.md", "notes:hidden.md", "C:evil.md", "a.md.", "dir /x.md", ".GIT/x.md", "GIT~1/x.md",
            "a<b>.md", 'q"uote.md', "../x.md", "/abs.md", "COM1.md", "lpt9.txt.md", "a\\b.md", "x\ny.md"]
     good = ["ok/fine.md", "caf\u00e9.md", "People/Ann.md", "-rf.md"]
@@ -260,6 +311,10 @@ def check_dangerous_names_are_rejected() -> str:
 
 
 def check_console_survives_unencodable_text() -> str:
+    """Prove that text the console encoding cannot show is escaped, not left to raise an error.
+
+    Escapes mixed Japanese, emoji and accented text for three legacy encodings and checks the result encodes.
+    """
     for encoding in ("cp1252", "ascii", "cp437"):
         shown = console_safe("\u65e5\u672c\u8a9e \U0001f600 caf\u00e9", encoding)
         shown.encode(encoding)  # must be representable
@@ -269,6 +324,12 @@ def check_console_survives_unencodable_text() -> str:
 
 
 def check_ledger_tamper_detection() -> str:
+    """Prove that the ledger notices an edited entry and an edited snapshot.
+
+    A fresh ledger must verify (the control). Then one event's payload is edited behind the ledger's back and
+    verification must fail; after that is undone, a snapshot's stored text is forged and both verification and
+    loading that snapshot must fail.
+    """
     from .models import Memory
 
     with _tmp() as base:
@@ -302,6 +363,10 @@ def check_ledger_tamper_detection() -> str:
 
 
 def check_ledger_file_permissions() -> str:
+    """Prove that a newly created ledger file is readable and writable by its owner only (mode 600).
+
+    SKIP where the OS is not POSIX, since this tool does not set Windows permissions.
+    """
     if os.name != "posix":
         raise _Skip(f"Windows permissions are not set by this tool; the default ledger lives in "
                     f"{default_ledger_path().parent}, which is private to your user account")
@@ -315,6 +380,13 @@ def check_ledger_file_permissions() -> str:
 
 
 def check_viewer_is_local_and_protected() -> str:
+    """Prove that the viewer serves this computer only and answers only requests that carry its secret.
+
+    Starts a real viewer on a free port and checks that it listens on 127.0.0.1, refuses a request without
+    the secret (403), with another host name (421) or with POST (405), and serves the real request (200). It then
+    checks that no other program can bind the same port and that a second viewer cannot. On Windows a control
+    first shows that ordinary sockets can share a port there, so the exclusive setting matters.
+    """
     import http.client
     import socket
     import threading
@@ -485,8 +557,20 @@ def _write_tripwire(path: Path) -> Path:
 
 
 def _hostile_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
-    """A repository whose own config names programs for git to run (a filter, an external diff, hooks, an fsmonitor), each one the tripwire,
-    recording into a marker file of its own. `prefix` names the markers, so two repositories made with different prefixes never share one.
+    """Build a repository whose own config names programs for git to run, each one the tripwire.
+
+    The programs are a filter, an external diff, hooks and an fsmonitor. Each records into a marker file of its
+    own. The repository holds `a.md` in two commits, the first with Windows line endings.
+
+    Args:
+        git: Path of the git executable.
+        root: A new folder to create; the repository goes in `root/repo` and the hooks in `root/hooks`.
+        trap: The tripwire script that every configured program points at.
+        prefix: Names the markers, so two repositories made with different prefixes never share one.
+        markers_dir: Where the markers go; `root` when omitted.
+
+    Returns:
+        The repository and its markers, keyed by the name in TRIPS.
     """
     root.mkdir(parents=True)
     repo = root / "repo"
@@ -551,6 +635,13 @@ def _tripwire_report(markers: dict[str, Path], names: list[str]) -> str:
 
 
 def check_rollback_is_safe() -> str:
+    """Prove that a git rollback in a hostile repository runs no program and restores the exact bytes.
+
+    Control: in one hostile repository ordinary git fires the tripwires (SKIP if neither the filter nor the diff
+    does). Then a rollback is applied in a second, identical repository with a separate set of markers, and none
+    may fire. It must also restore the original bytes with their CRLF line endings, as one new commit by
+    `memdebug`, and save the uncommitted edit it replaced first.
+    """
     from .adapters.restore import Restorer
 
     git = _need_git()
@@ -596,8 +687,11 @@ def check_rollback_is_safe() -> str:
 
 
 def check_folder_rollback_is_safe() -> str:
-    """The plain-folder rollback, proven on this machine (no git needed): the plan writes nothing, the file comes back, what it replaced is
-    saved first byte for byte, a backup folder inside the notes is refused, and nothing outside the notes is touched.
+    """Prove that the plain-folder rollback is safe on this machine, without needing git.
+
+    There is no control. Checks that a backup folder inside the notes is refused, that planning writes nothing,
+    that the file comes back byte for byte (CRLF kept), that what it replaced is saved first byte for byte, that
+    nothing outside the plan is touched, and that a plan which no longer matches is refused.
     """
     from .adapters.folder import FolderAdapter
     from .adapters.folder_restore import FolderRestorer
@@ -662,6 +756,11 @@ CHECKS: list[tuple[str, Callable[[], str]]] = [
 
 
 def run_all() -> list[Result]:
+    """Run every check in CHECKS and return the environment line followed by one result per check.
+
+    A check that raises `_Skip` is reported as SKIP, an `AssertionError` as FAIL with its message, and any other
+    exception as FAIL (only its type name is kept), because a check that cannot run is not a pass.
+    """
     results: list[Result] = [("environment", "INFO", check_info())]
     for name, check in CHECKS:
         try:

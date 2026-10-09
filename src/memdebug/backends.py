@@ -18,6 +18,7 @@ def is_opaque_id(memory_id: str) -> bool:
 
 
 def short_id(memory_id: str) -> str:
+    """An opaque id cut to its first 8 characters plus an ellipsis; any other id is left as it is."""
     return memory_id[:8] + "…" if is_opaque_id(memory_id) else memory_id
 
 

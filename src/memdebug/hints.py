@@ -65,6 +65,15 @@ _SECRETS = [
 
 @dataclass(frozen=True)
 class Hint:
+    """One thing in a memory's text that is worth a second look.
+
+    Attributes:
+        kind: A short label for the shape found, for example "override-phrase" or "secret-like".
+        severity: "note" or "warning".
+        message: A plain-words explanation of why the text was flagged.
+        evidence: A short excerpt that is safe to display. For a secret-like string it names only the kind and length.
+    """
+
     kind: str
     severity: str  # "note" or "warning"
     message: str
@@ -72,6 +81,7 @@ class Hint:
 
     @property
     def key(self) -> tuple[str, str]:
+        """The pair (kind, evidence) that identifies a hint when removing duplicates or comparing two scans."""
         return (self.kind, self.evidence)
 
 

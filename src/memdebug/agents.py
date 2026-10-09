@@ -21,6 +21,16 @@ from .stores import Candidate, discover
 
 @dataclass(frozen=True)
 class Place:
+    """A folder under the home folder where an agent keeps what it remembers, and how to offer it for watching.
+
+    Attributes:
+        parts: The folder, as path parts relative to the home folder.
+        files: If set, only these files in the folder are offered, nothing else.
+        name: The suggested store name.
+        what: A short description of the contents, shown to the person.
+        always: Whether to offer the place even before any note exists in it, because the agent creates the folder itself.
+    """
+
     parts: tuple[str, ...]      # folder, relative to the home folder
     files: tuple[str, ...] = ()  # if set: only these files in that folder, nothing else
     name: str = ""              # suggested store name
@@ -30,6 +40,16 @@ class Place:
 
 @dataclass(frozen=True)
 class Agent:
+    """A known AI agent: how to tell it is installed and where its memory lives.
+
+    Attributes:
+        key: A short identifier for the agent, such as "claude-code".
+        name: The agent's display name.
+        sign: A folder under home (as path parts) whose existence means the agent is probably installed.
+        note: A one-line description of how the agent keeps its memory, shown to the person.
+        places: The places where the agent's memory can be watched.
+    """
+
     key: str
     name: str
     sign: tuple[str, ...]       # a folder under home whose existence means the agent is probably installed
@@ -65,6 +85,13 @@ CLOUD_NOTE = ("ChatGPT, Claude (claude.ai and its desktop and phone apps), Gemin
 
 @dataclass
 class FoundAgent:
+    """A known agent that appears to be installed, with the places memdebug could watch for it.
+
+    Attributes:
+        agent: The catalog entry.
+        candidates: The watchable places found on this computer. Empty when there is nothing to watch yet.
+    """
+
     agent: Agent
     candidates: list[Candidate] = field(default_factory=list)
 
@@ -118,6 +145,16 @@ def scan_agents(home: Path | None = None) -> list[FoundAgent]:
 
 
 def summary_lines(found: list[FoundAgent], docker_names: list[str] | None = None) -> list[str]:
+    """Lines of text describing the found agents, for the person to read.
+
+    Args:
+        found: The result of `scan_agents`.
+        docker_names: Names of running Open WebUI containers, each listed as one more place to watch.
+
+    Returns:
+        One line per agent and per container (a single line saying none were found if there are neither), then a blank line
+        and the note about assistants whose memory is in the cloud.
+    """
     lines = []
     for item in found:
         watchable = f"{len(item.candidates)} place(s) memdebug can watch" if item.candidates else "nothing to watch yet"

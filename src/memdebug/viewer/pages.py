@@ -46,12 +46,27 @@ NAV = [("overview", "Overview", "/"), ("timeline", "Timeline", "/timeline"), ("s
 
 @dataclass(frozen=True)
 class Page:
+    """A finished response.
+
+    Attributes:
+        status: The HTTP status code.
+        html: The complete HTML document.
+    """
+
     status: int
     html: str
 
 
 @dataclass(frozen=True)
 class Context:
+    """What every page needs to know about the request that is not part of the ledger.
+
+    Attributes:
+        ledger_name: The ledger's file name, shown in the page header.
+        theme: "auto", "light" or "dark".
+        here: The address of the page being shown.
+    """
+
     ledger_name: str
     theme: str = "auto"  # "auto" follows the computer's setting; "light" and "dark" are the person's choice
     here: str = "/"      # the page being shown, so the theme switch can return to it
@@ -61,11 +76,13 @@ THEMES = (("auto", "Auto"), ("light", "Light"), ("dark", "Dark"))
 
 
 def url(path: str, **params) -> str:
+    """A path followed by a query string built from the params that are not None, sorted by name."""
     query = urlencode([(k, v) for k, v in sorted(params.items()) if v is not None])
     return f"{path}?{query}" if query else path
 
 
 def when(moment: datetime) -> str:
+    """A moment to the second in UTC, such as "2026-10-09 14:03:07 UTC"."""
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
 
 
@@ -76,10 +93,12 @@ def stamp(moment: datetime) -> str:
 
 
 def plural(count: int, one: str, many: str) -> str:
+    """The count followed by `one` when it is 1, otherwise by `many`."""
     return f"{count} {one if count == 1 else many}"
 
 
 def short(digest: str) -> str:
+    """The first 12 characters of a hash."""
     return digest[:12]
 
 
@@ -87,15 +106,21 @@ PUT_BACK_KINDS = ("folder", "markdown-git")  # the store types memdebug can writ
 
 
 def earlier_snapshot(snapshots, backend: str, scope: dict, seq: int) -> SnapshotInfo | None:
-    """The latest snapshot of this store taken before ledger entry `seq`: the saved state a person would most likely want back."""
+    """The latest snapshot of this store taken before ledger entry `seq`.
+
+    That is the saved state a person would most likely want back. A snapshot belongs to the store when its
+    backend and scope both match; None is returned when there is no such snapshot.
+    """
     found = [i for i in snapshots if i.backend == backend and i.scope == scope and i.ledger_seq < seq]
     return max(found, key=lambda i: (i.ledger_seq, int(i.id[1:])), default=None)
 
 
 def rollback_command(backend: str, scope: dict, snapshot_id: str) -> str | None:
-    """The command that puts a store back to a snapshot, or None when it cannot be given safely. The store's name comes from the ledger, which
-    anyone could edit, so it is only put into a command when it passes the same strict rule as a watched store's name: nothing a shell treats
-    specially, so pasting the command can never do anything else.
+    """The command that puts a store back to a snapshot, or None when it cannot be given safely.
+
+    The store's name comes from the ledger, which anyone could edit, so it is only put into a command when it
+    passes the same strict rule as a watched store's name: nothing a shell treats specially, so pasting the
+    command can never do anything else. None is also returned for a kind of store that memdebug cannot write.
     """
     name = scope.get("store")
     if backend not in PUT_BACK_KINDS or not isinstance(name, str) or not valid_name(name):
@@ -104,8 +129,18 @@ def rollback_command(backend: str, scope: dict, snapshot_id: str) -> str | None:
 
 
 def putback(backend: str, scope: dict, snapshot_id: str, *, heading: str = "Put it back", lead: str | None = None) -> Markup:
-    """How to put a store back to a snapshot. The viewer itself never changes anything: this is text to paste into a terminal, where memdebug
-    shows what would change first and asks before doing it.
+    """How to put a store back to a snapshot, as a section of the page.
+
+    The viewer itself never changes anything: this is text to paste into a terminal, where memdebug shows what
+    would change first and asks before doing it. For a kind of store memdebug only reads, the section says so
+    instead. When the store's name cannot be put into a command safely, the command shows `<name>` in its place.
+
+    Args:
+        backend: The kind of store, such as "folder" or "markdown-git".
+        scope: The store's scope. Its "store" entry, when valid, names the store in the command.
+        snapshot_id: The snapshot to put the store back to.
+        heading: The section's heading.
+        lead: Replaces the default introductory sentence.
     """
     if backend not in PUT_BACK_KINDS:
         return el("section", el("h2", heading), el(
@@ -131,10 +166,22 @@ def putback(backend: str, scope: dict, snapshot_id: str, *, heading: str = "Put 
 
 
 def scope_text(scope: dict) -> str:
+    """A store's scope as "key=value" pairs sorted by key, or "-" when it is empty."""
     return ", ".join(f"{k}={v}" for k, v in sorted(scope.items())) or "-"
 
 
 def document(ctx: Context, title: str, active: str, content: Markup) -> str:
+    """The whole HTML page around `content`: head, header with navigation and theme switch, and footer.
+
+    Args:
+        ctx: Supplies the ledger name, the theme and the address the theme switch returns to.
+        title: The page title; " - memdebug" is added to it.
+        active: The key in `NAV` of the section to mark as current, or "" for none.
+        content: The page's own content, placed in <main>.
+
+    Returns:
+        The document text, starting with the doctype.
+    """
     tabs = el("nav", *[
         el("a", label, href=path, aria_current="page" if key == active else None) for key, label, path in NAV
     ], class_="tabs", aria_label="Sections")
@@ -159,22 +206,33 @@ def document(ctx: Context, title: str, active: str, content: Markup) -> str:
 
 
 def badge(event: MemoryEvent) -> Markup:
+    """The coloured label naming what kind of event this is, such as ADD or OUTSIDE HISTORY."""
     return el("span", OP_LABEL.get(event.op.value, event.op.value), class_=f"badge {OP_CLASS[event.op.value]}")
 
 
 def notice(text: str, kind: str = "") -> Markup:
+    """A status message box. `kind` adds a style class: the pages use "ok" and "bad"."""
     return el("div", text, class_=f"notice {kind}".strip(), role="status")
 
 
 def error_page(ctx: Context, status: int, title: str, message: str) -> Page:
+    """A page with a heading and an error message, carrying the given HTTP status.
+
+    No section in the navigation is marked as current.
+    """
     content = el("h1", title), notice(message, "bad")
     return Page(status, document(ctx, title, "", Markup("".join(content))))
 
 
 def diff_lines(lines: list[str]) -> Markup:
+    """The lines of a unified diff as a <pre>, with added, removed and hunk lines styled differently.
+
+    Only the two file-header lines at the very top are skipped. Any other
+    line is memory text and is shown, even if it begins with "+++" or "---".
+    """
     spans: list[Markup] = []
     for number, line in enumerate(lines):
-        if number < len(DIFF_HEADERS) and line == DIFF_HEADERS[number]:  # only the real headers; see DIFF_HEADERS
+        if number < len(DIFF_HEADERS) and line == DIFF_HEADERS[number]:
             continue
         kind = "add" if line.startswith("+") else "del" if line.startswith("-") else "hunk"
         spans.append(el("span", block(line, 2000), class_=kind))
@@ -187,15 +245,25 @@ _BREAKS = re.compile(r"[ \t\r\n]+")
 
 
 def _excerpt(event: MemoryEvent, limit: int = 260) -> Markup:
-    """The start of a memory on one line. Only spaces, tabs and line breaks are folded together; any other
-    control character stays visible, as everywhere else in the viewer.
+    """The start of a memory on one line.
+
+    Only spaces, tabs and line breaks are folded together; any other control character stays visible, as
+    everywhere else in the viewer.
     """
     return inline(_BREAKS.sub(" ", describe_event(event)).strip(), limit)
 
 
 def event_row(entry: LedgerEntry, href: str, selected: bool, snaps: dict[str, SnapshotInfo] | None = None,
               show_store: bool = False) -> Markup:
-    """One entry on the chain. The list item carries the dot's colour and icon; the link carries the content."""
+    """One entry on the chain. The list item carries the dot's colour and icon; the link carries the content.
+
+    Args:
+        entry: The ledger entry to show.
+        href: Where the row's link goes.
+        selected: Whether the row is the one currently open.
+        snaps: Snapshots by id, used to describe snapshot entries.
+        show_store: Add the entry's store (backend and scope) to the row.
+    """
     event = entry.event
     op = event.op.value
     seq = el("span", inline(entry.id, 12), class_="seq")
@@ -250,6 +318,10 @@ def event_row(entry: LedgerEntry, href: str, selected: bool, snaps: dict[str, Sn
 
 
 def chain(rows: list[Markup], goes_on: bool = False) -> Markup:
+    """The rows as one ordered list, the chain.
+
+    `goes_on` styles the chain as continuing past the last row, because older entries follow.
+    """
     return el("ol", *rows, class_="chain goes-on" if goes_on else "chain")
 
 
@@ -274,6 +346,11 @@ def _putback_tip(shown: list[LedgerEntry], snaps: dict) -> list[Markup]:
 
 
 def overview(ledger: Ledger, ctx: Context) -> Page:
+    """The front page: a verdict, entries that need a look, recent entries, snapshots and the ledger head.
+
+    Reads the ledger only. The verdict counts changes outside the store's history and memories from an untrusted
+    source.
+    """
     counts = ledger.counts()
     external = counts["by_op"].get("EXTERNAL", 0)
     untrusted = counts["untrusted"]
@@ -340,9 +417,10 @@ def overview(ledger: Ledger, ctx: Context) -> Page:
 # -- agents --------------------------------------------------------------------------------------------------------
 
 def agents_page(ctx: Context, found: list[FoundAgent]) -> Page:
-    """The known agents that appear to be installed, and what memdebug could watch for each. Presence is only the existence of a folder: no
-    file is opened. Folder names come from the disk, so they are shown as escaped text and never put into a command; the one command given
-    is fixed text.
+    """The known agents that appear to be installed, and what memdebug could watch for each.
+
+    Presence is only the existence of a folder: no file is opened. Folder names come from the disk, so they are
+    shown as escaped text and never put into a command; the one command given is fixed text.
     """
     parts: list[Markup] = [
         el("h1", "Agents on this computer"),
@@ -371,6 +449,12 @@ def agents_page(ctx: Context, found: list[FoundAgent]) -> Page:
 # -- timeline ------------------------------------------------------------------------------------------------------
 
 def rollback_section(event: MemoryEvent) -> list[Markup]:
+    """The part of an entry's details that describes a rollback.
+
+    It names the snapshot that was restored, lists the files touched and says how to undo the rollback. The
+    wording differs for a plain folder and for a git store. A record that cannot be read gives a short message
+    that points to the integrity check.
+    """
     details = rollback_details(event)
     if details is None:
         return [el("p", "This record could not be read. Run the integrity check.", class_="why")]
@@ -415,6 +499,13 @@ def rollback_section(event: MemoryEvent) -> list[Markup]:
 
 
 def inspector(entry: LedgerEntry, snapshots: dict | None = None) -> Markup:
+    """The detail sheet for one ledger entry: what changed, where it came from, hints and ledger facts.
+
+    Args:
+        entry: The entry to show.
+        snapshots: Snapshots by id. For a change outside the store's history, the latest one taken before it
+            is offered as the state to put the store back to.
+    """
     event = entry.event
     op = event.op.value
     source = event.source
@@ -495,6 +586,17 @@ def inspector(entry: LedgerEntry, snapshots: dict | None = None) -> Markup:
 
 def timeline(ledger: Ledger, ctx: Context, *, op: str | None, trust: str | None, before: int | None,
              event_id: str | None) -> Page:
+    """The timeline page: a filtered, paged list of entries, newest first, and the details of the selected one.
+
+    Args:
+        ledger: The ledger to read.
+        ctx: The request context.
+        op: Show only entries with this operation, or all when None.
+        trust: Show only entries with this trust level, or all when None.
+        before: Show only entries with a smaller ledger sequence number than this (the paging position). When
+            None and an event is selected, the list starts a few entries newer than it.
+        event_id: The id of the entry to open. An id that does not exist shows a notice instead of details.
+    """
     selected = ledger.get_entry(event_id) if event_id else None
     page_before = before
     if before is None and selected is not None:
@@ -536,6 +638,11 @@ def timeline(ledger: Ledger, ctx: Context, *, op: str | None, trust: str | None,
 # -- snapshots -----------------------------------------------------------------------------------------------------------
 
 def snapshot_table(infos: list[SnapshotInfo]) -> Markup:
+    """A table of snapshots, newest first.
+
+    Each row links to the snapshot and, when the same store has an earlier snapshot in the list, to a comparison
+    with it.
+    """
     header = el("tr", *[el("th", h, scope="col") for h in ("Snapshot", "Taken", "Store", "Memories", "Anchor", "Label", "")])
     rows = []
     previous: dict[tuple, str] = {}
@@ -556,6 +663,7 @@ def snapshot_table(infos: list[SnapshotInfo]) -> Markup:
 
 
 def snapshots(ledger: Ledger, ctx: Context) -> Page:
+    """The page listing every snapshot in the ledger."""
     infos = ledger.list_snapshots()
     content = Markup("".join([
         str(el("h1", "Snapshots")),
@@ -566,6 +674,17 @@ def snapshots(ledger: Ledger, ctx: Context) -> Page:
 
 
 def snapshot_detail(ledger: Ledger, ctx: Context, snapshot_id: str, page: int) -> Page:
+    """The page for one snapshot: its facts, how to put the store back, and the memories it holds.
+
+    Args:
+        ledger: The ledger to read.
+        ctx: The request context.
+        snapshot_id: The snapshot to show.
+        page: Which page of memories to show, counting from 1 (SNAPSHOT_PAGE_SIZE memories per page).
+
+    Raises:
+        SnapshotError: If the snapshot cannot be loaded.
+    """
     snap = ledger.load_snapshot(snapshot_id)
     info = snap.info
     start = (page - 1) * SNAPSHOT_PAGE_SIZE
@@ -598,6 +717,18 @@ def snapshot_detail(ledger: Ledger, ctx: Context, snapshot_id: str, page: int) -
 # -- compare -----------------------------------------------------------------------------------------------------------------
 
 def diff_page(ledger: Ledger, ctx: Context, old_id: str | None, new_id: str | None, full: bool) -> Page:
+    """The compare page: a picker for two snapshots and, once both are chosen, what changed between them.
+
+    The picker is a form that sends GET to the same page, so choosing only navigates. A snapshot that cannot be
+    loaded is reported on the page rather than raised.
+
+    Args:
+        ledger: The ledger to read.
+        ctx: The request context.
+        old_id: The earlier snapshot, or None if none is chosen.
+        new_id: The later snapshot, or None if none is chosen.
+        full: Show full texts instead of short excerpts.
+    """
     infos = ledger.list_snapshots()
     def options(chosen):
         return [el("option", f"{i.id}: {stamp(i.taken_at)} ({i.count} memories)", value=i.id, selected=(i.id == chosen))
@@ -629,6 +760,13 @@ def diff_page(ledger: Ledger, ctx: Context, old_id: str | None, new_id: str | No
 
 
 def diff_body(result: Diff, full: bool) -> list[Markup]:
+    """The content that describes one comparison: counts, warnings and each change.
+
+    At most MAX_DIFF_CHANGES changes are shown, followed by a notice when there are more. Changed texts are
+    Added and removed texts are shown whole with `full`, otherwise as short excerpts. A changed text is marked up
+    where that is possible; when it is not, `full` gives a line diff and otherwise a short before-and-after
+    excerpt.
+    """
     parts: list[Markup] = [el("h2", f"{result.old.id} to {result.new.id}"), el(
         "p", f"{result.count('changed')} changed, {result.count('added')} added, {result.count('removed')} removed "
              f"({result.old.backend}, {scope_text(result.old.scope)})")]
@@ -662,6 +800,14 @@ def diff_body(result: Diff, full: bool) -> list[Markup]:
 # -- integrity ---------------------------------------------------------------------------------------------------------------------
 
 def integrity(ctx: Context, counts: dict, result: VerifyResult, checked_at: datetime) -> Page:
+    """The integrity page: the outcome of a ledger check and what such a check does and does not prove.
+
+    Args:
+        ctx: The request context.
+        counts: The ledger's counts, as returned by `Ledger.counts()`; "events", "snapshots" and "head" are shown.
+        result: The outcome of the check. At most 100 problems are listed.
+        checked_at: When the check ran.
+    """
     if result.ok:
         verdict = notice(f"Intact. {counts['events']} events and {counts['snapshots']} snapshots match the chain.", "ok")
     else:

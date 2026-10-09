@@ -42,6 +42,17 @@ class WitnessError(MemdebugError):
 
 @dataclass(frozen=True)
 class WitnessLine:
+    """One line of a witness file: a record of the ledger's newest entry at one moment.
+
+    Attributes:
+        seq: The sequence number of the ledger entry that was witnessed.
+        head: The hash of that entry.
+        count: How many entries the ledger held at the time.
+        at: When the line was written, as a UTC timestamp text.
+        prev: The digest of the line before this one, or `GENESIS` for the first line.
+        text: The exact line, without its line break.
+    """
+
     seq: int
     head: str
     count: int
@@ -51,11 +62,23 @@ class WitnessLine:
 
     @property
     def digest(self) -> str:
+        """The SHA-256 of the line's text, which the next line records as its `prev`."""
         return hashlib.sha256(self.text.encode("utf-8")).hexdigest()
 
 
 @dataclass
 class WitnessCheck:
+    """The result of checking a witness file against the ledger.
+
+    Attributes:
+        ok: Whether there were no problems. Warnings do not make it false.
+        problems: What is wrong with the witness file or with the ledger's agreement with it.
+        warnings: Things worth knowing that are not proof of tampering, such as the witness being on the same disk.
+        lines: How many lines were read from the witness file (reading stops at the first malformed line).
+        last_seq: The sequence number of the last witnessed ledger entry, or 0 if there is none.
+        unwitnessed: Ledger entries newer than the last witnessed one.
+    """
+
     ok: bool
     problems: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -163,6 +186,7 @@ def append_witness(ledger: Ledger, path: Path, *, now: datetime | None = None) -
 
 
 def same_disk(ledger_path: Path, witness_path: Path) -> bool:
+    """Whether the ledger file and the witness file's folder are on the same device. False if either cannot be looked at."""
     try:
         return os.stat(ledger_path).st_dev == os.stat(witness_path.parent).st_dev
     except OSError:

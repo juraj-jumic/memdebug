@@ -2,8 +2,10 @@
 
 Open WebUI keeps what it remembers about a user in a `memory` table and records no change history, so memdebug records
 what it sees between two looks. This adapter only reads: the file is opened read-only (SQLite's read-only mode plus
-`query_only`), only the `memory` and `user` tables are touched, and every row is validated. It never reads chats,
-passwords, API keys or settings. Work on a copy of the database, not the live file inside the container.
+`query_only`) and every row is validated. It reads the `memory` table; the `user` table, only to find the single
+user's id when none was named; and, from `chat_message`, only each message's time and role (to say whether a chat was
+active near a memory's last change), never the message text. It never reads passwords, API keys or settings. Work on a
+copy of the database, not the live file inside the container.
 """
 from __future__ import annotations
 
@@ -49,6 +51,18 @@ def _epoch(value: object) -> float | None:
 
 
 class OpenWebUIAdapter:
+    """Read-only adapter for the memories of one Open WebUI user, read from a copy of webui.db.
+
+    The store's scope is `{"user_id": <id>}`. Open WebUI records no change history, so `capabilities` is empty and
+    memdebug records what it observes between two looks. Each memory carries a `Source` that only describes what
+    Open WebUI recorded about it and how near a chat message was; it is never a verdict.
+
+    Raises:
+        AdapterError: From the constructor, if `max_rows` is not positive, the database cannot be opened read-only or
+            has no `memory` table with the expected columns, or `user_id` is unusable or was omitted and the single
+            user cannot be determined.
+    """
+
     name = "openwebui"
     capabilities: set[str] = set()  # no history to read
 
@@ -107,13 +121,23 @@ class OpenWebUIAdapter:
 
     @property
     def user(self) -> str:
+        """The id of the user whose memories are read."""
         return self._user
 
     @property
     def scope(self) -> dict[str, str]:
+        """The scope of this store, `{"user_id": <id>}`; the only scope `list_memories` accepts."""
         return {"user_id": self._user}
 
     def list_memories(self, scope: dict[str, str]) -> LiveMemories:
+        """Lists the memory rows of the user, oldest first.
+
+        Opens the database read-only for the call. Rows without a usable id or text are skipped with a warning, and the
+        listing is marked incomplete when a row is skipped or there are more than `max_rows` rows.
+
+        Raises:
+            AdapterError: If `scope` is not this store's scope, or the memory table cannot be read.
+        """
         if scope != self.scope:
             raise AdapterError(f"scope must be {{'user_id': {safe_text(self._user, 40)!r}}} for this database")
         warnings = Warnings()
@@ -203,7 +227,9 @@ class OpenWebUIAdapter:
                       role=f"type={kind}" if kind else None, note="; ".join(parts)[:390] or None)
 
     def read_history(self, max_rows: int) -> HistoryRead:
+        """Returns an empty history: Open WebUI records none."""
         return HistoryRead(events=[], refs=set(), truncated=False)
 
     def history(self, memory_id: str) -> list[MemoryEvent]:
+        """Returns no events: Open WebUI records no history."""
         return []

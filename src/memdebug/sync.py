@@ -26,6 +26,19 @@ from .textsafe import safe_text
 
 @dataclass
 class SyncReport:
+    """What one sync did.
+
+    Attributes:
+        history_events: New history rows copied into the ledger.
+        external_events: Changes recorded as made outside the backend's API (stores that keep a history).
+        observed_events: Changes recorded as seen between two looks (stores that keep no history).
+        unconfirmed: Candidate changes that were not seen again on the second pass and so were not recorded.
+        skipped_rows: History rows that could not be understood.
+        reconcile_skipped: True when the history was only partly read, so changes outside the API were not checked.
+        warnings: Notes for the person, including those from the history and live reads.
+        live: The listing the final pass looked at.
+    """
+
     history_events: int = 0
     external_events: int = 0
     observed_events: int = 0  # changes seen in a store that keeps no history
@@ -76,12 +89,31 @@ def sync(
     max_history_rows: int = 100_000,
     acknowledge: dict[str, str | None] | None = None,
 ) -> SyncReport:
-    """adopt_existing: on the very first sync of a store, record memories that have no history
-    as observed ADDs instead of as changes made outside the API.
+    """Copies new backend history into the ledger, then records changes that bypassed it.
 
-    acknowledge: memory id -> the exact text (or None for removed) that this tool itself just wrote. A change that
-    matches is recorded as an ordinary ADD, UPDATE or DELETE by "memdebug rollback", not as a change made outside
-    the history, so a rollback does not raise a false alarm. Anything that differs is still reported.
+    Reads the backend's history and live listing, appends the resulting events to the ledger in one transaction, and
+    returns a report. If another process writes to the ledger meanwhile, the sync is retried up to three times.
+
+    Args:
+        adapter: The reader for the store.
+        ledger: The ledger to append to.
+        scope: The scope of the store to compare against.
+        now: The time to put on observed changes; defaults to the current time.
+        settle_seconds: How long to wait between the two passes that must both see a change.
+        sleep: The function used to wait (replaceable for tests).
+        adopt_existing: On the very first sync of a store, record memories that have no history as observed ADDs
+            instead of as changes made outside the API.
+        max_history_rows: The most history rows to ask the adapter to read.
+        acknowledge: Memory id -> the exact text (or None for removed) that this tool itself just wrote. A change
+            that matches is recorded as an ordinary ADD, UPDATE or DELETE by "memdebug rollback", not as a change
+            made outside the history, so a rollback does not raise a false alarm. Anything that differs is still
+            reported.
+
+    Returns:
+        A SyncReport with the counts and warnings.
+
+    Raises:
+        LedgerConflictError: If the ledger changed under the sync on all three attempts.
     """
     last_error: LedgerConflictError | None = None
     for _ in range(3):  # another process may have written to the ledger meanwhile

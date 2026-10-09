@@ -41,6 +41,20 @@ class SettingsError(MemdebugError):
 
 @dataclass(frozen=True)
 class StoreConfig:
+    """The settings of one watched store, as kept in the settings file.
+
+    Attributes:
+        name: The store's name, which must pass `valid_name`.
+        kind: One of `KINDS`.
+        path: Where the store is: a folder, or a database file for Open WebUI and Mem0.
+        subdir: A subfolder to watch, for the markdown and folder kinds.
+        user_id: The user to read, for Open WebUI and Mem0 (required for Mem0).
+        agent_id: Mem0 only: the agent to read.
+        run_id: Mem0 only: the run to read.
+        docker: Open WebUI only: the container its database is copied from, before every look.
+        files: Folder only: watch just these files in it (comma-separated names), nothing else in the folder.
+    """
+
     name: str
     kind: str
     path: str
@@ -52,18 +66,32 @@ class StoreConfig:
     files: str | None = None  # folder only: watch just these files in it (comma-separated names), nothing else in the folder
 
     def describe(self) -> str:
+        """The store's name followed by its kind in words, for showing to the person."""
         return f"{self.name} ({KIND_NAMES[self.kind]})"
 
 
 @dataclass
 class Registry:
+    """The list of watched stores, as held in the settings file.
+
+    Attributes:
+        stores: The watched stores, with unique names.
+        witness: The path of the witness file, if one is set.
+    """
+
     stores: list[StoreConfig] = field(default_factory=list)
     witness: str | None = None
 
     def get(self, name: str) -> StoreConfig | None:
+        """The store with this name, or None."""
         return next((s for s in self.stores if s.name == name), None)
 
     def add(self, store: StoreConfig) -> None:
+        """Add a store.
+
+        Raises:
+            SettingsError: If a store with that name already exists or there are already `MAX_STORES` stores.
+        """
         if self.get(store.name) is not None:
             raise SettingsError(f"there is already a store called {safe_text(store.name, 40)}; choose another name or remove it first")
         if len(self.stores) >= MAX_STORES:
@@ -71,6 +99,11 @@ class Registry:
         self.stores.append(store)
 
     def remove(self, name: str) -> StoreConfig:
+        """Remove the store with this name and return it.
+
+        Raises:
+            SettingsError: If no store has that name.
+        """
         store = self.get(name)
         if store is None:
             raise SettingsError(f"no store is called {safe_text(name, 40)}")
@@ -79,6 +112,10 @@ class Registry:
 
 
 def valid_name(name: str) -> bool:
+    """Whether `name` is a usable store name.
+
+    It must be 1 to 40 lowercase letters, digits, dots, dashes or underscores, starting with a letter or digit.
+    """
     return bool(_NAME.match(name))
 
 
@@ -89,6 +126,14 @@ def _text(value: object, what: str, *, limit: int = 1000) -> str:
 
 
 def validate_store(data: object) -> StoreConfig:
+    """Check one store entry from the settings file and build its `StoreConfig`.
+
+    The entry must be a dict with exactly the known fields: `name`, `kind` and `path` are required and the rest are optional.
+    Mem0 stores need a `user_id`, `files` is only for folder stores and `docker` only for Open WebUI stores.
+
+    Raises:
+        SettingsError: If anything about the entry is missing, unknown, too long, unsafe or of the wrong type.
+    """
     if not isinstance(data, dict) or not {"name", "kind", "path"} <= set(data) or set(data) - {"name", "kind", "path", *_OPTIONS}:
         raise SettingsError("the settings file has a store entry with unexpected fields")
     name, kind = data["name"], data["kind"]
@@ -164,14 +209,24 @@ def save_registry(registry: Registry, path: Path) -> None:
 
 @dataclass
 class OpenedStore:
+    """A store opened for reading.
+
+    Attributes:
+        adapter: The read-only reader for the store.
+        scope: The scope the store's records are kept under in the ledger.
+        notes: Messages for the person about how the store was opened.
+    """
+
     adapter: MemoryAdapter
     scope: dict[str, str]
     notes: list[str] = field(default_factory=list)
 
 
 def open_store(cfg: StoreConfig, *, refresh: bool = True) -> OpenedStore:
-    """Open a store for reading. An Open WebUI store that lives in Docker gets a fresh copy of its database first
-    (`refresh=False` reads the copy that is already there, for commands that only look).
+    """Open a store for reading.
+
+    An Open WebUI store that lives in Docker gets a fresh copy of its database first (`refresh=False` reads the copy that is
+    already there, for commands that only look).
     """
     if cfg.docker and refresh:
         copy_database(Docker(), cfg.docker, Path(cfg.path))
@@ -219,6 +274,17 @@ def detect_kind(path: Path) -> str:
 
 @dataclass(frozen=True)
 class Candidate:
+    """A store that could be watched, found on this computer but not yet added.
+
+    Attributes:
+        kind: One of `KINDS`.
+        name: The suggested store name.
+        path: Where the store is.
+        why: A short description of what it is, shown to the person.
+        docker: For Open WebUI in Docker, the name of the container.
+        files: For a folder, the only files in it that should be watched.
+    """
+
     kind: str
     name: str
     path: Path

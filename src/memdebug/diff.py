@@ -24,6 +24,15 @@ MAX_SHOWN_LINES = 200
 
 @dataclass(frozen=True)
 class Change:
+    """One memory that differs between two snapshots.
+
+    Attributes:
+        kind: "added", "removed" or "changed".
+        memory_id: The id of the memory.
+        before: The text in the older snapshot, or None when the memory was added.
+        after: The text in the newer snapshot, or None when the memory was removed.
+    """
+
     kind: str  # "added", "removed" or "changed"
     memory_id: str
     before: str | None
@@ -32,16 +41,31 @@ class Change:
 
 @dataclass
 class Diff:
+    """The result of comparing two snapshots.
+
+    Attributes:
+        old: Header of the older snapshot.
+        new: Header of the newer snapshot.
+        changes: The changes that could be claimed, ordered by memory id.
+        warnings: Notes about claims that were left out because a listing may have been cut short.
+    """
+
     old: SnapshotInfo
     new: SnapshotInfo
     changes: list[Change] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def count(self, kind: str) -> int:
+        """The number of changes of the given kind ("added", "removed" or "changed")."""
         return sum(1 for c in self.changes if c.kind == kind)
 
 
 def diff_snapshots(old: Snapshot, new: Snapshot) -> Diff:
+    """The memory-by-memory comparison of two snapshots, following the rules in the module docstring.
+
+    Raises:
+        SnapshotError: If the snapshots are of different backends or scopes.
+    """
     if old.info.backend != new.info.backend or old.info.scope != new.info.scope:
         raise SnapshotError("snapshots of different backends or scopes cannot be compared")
     before = {m.id: m.text for m in old.memories}
@@ -84,8 +108,9 @@ DIFF_HEADERS = (f"--- {FROM_LABEL}", f"+++ {TO_LABEL}")
 
 
 def line_diff(before: str | None, after: str | None) -> list[str]:
-    """A unified line diff of two texts, bounded in size. Lines are returned raw: the caller must
-    escape them before printing.
+    """A unified line diff of two texts, bounded in size.
+
+    Lines are returned raw: the caller must escape them before printing.
     """
     a = (before or "").splitlines()
     b = (after or "").splitlines()

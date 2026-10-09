@@ -19,8 +19,10 @@ _UNSAFE_CATEGORIES = {"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"}
 
 
 def bound_text(text: str, max_chars: int = MAX_TEXT_CHARS) -> str:
-    """Cap length. A cut text carries a hash of the full text, so two different long texts
-    that share a prefix still compare as different.
+    """Cap the length of a text.
+
+    A cut text carries a hash of the full text, so two different long texts that share a prefix still compare as different.
+    A text of `max_chars` characters or fewer is returned unchanged.
     """
     if len(text) <= max_chars:
         return text
@@ -38,8 +40,15 @@ def _escape(ch: str) -> str:
 
 
 def safe_text(value: object, limit: int | None = 200) -> str:
-    """Single-line, printable rendering of untrusted text. Control, format, bidi and
-    line-separator characters are shown as visible escapes.
+    """Single-line, printable rendering of untrusted text.
+
+    Control, format, bidi and line-separator characters (and other unassigned, private-use or surrogate characters) are shown as
+    visible escapes. Newlines, carriage returns and tabs become the two-character escapes. Any value is accepted and converted
+    with `str`.
+
+    Args:
+        value: The text, or any object to show as text.
+        limit: The most characters to return before cutting off with "..."; None for no limit.
     """
     pieces: list[str] = []
     length = 0
@@ -64,8 +73,13 @@ def has_unsafe_chars(text: str) -> bool:
 
 
 def console_safe(text: str, encoding: str | None = None) -> str:
-    """Make text printable on a console whose encoding cannot show every character (a Windows
-    code page, for example). Unencodable characters become visible escapes instead of raising.
+    """Make text printable on a console whose encoding cannot show every character.
+
+    An example is a Windows code page. Unencodable characters become visible escapes instead of raising.
+
+    Args:
+        text: The text to print.
+        encoding: The console's encoding. Defaults to that of `sys.stdout`, then UTF-8.
     """
     import sys
 
