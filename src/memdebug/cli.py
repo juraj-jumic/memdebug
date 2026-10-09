@@ -765,6 +765,14 @@ def backups_clean(
         raise typer.Exit(1)
 
 
+@app.command("selftest-helper", hidden=True, context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
+def selftest_helper(ctx: typer.Context) -> None:
+    """Internal: the second process `memdebug selftest` starts in a build that has no Python of its own. Not for people to run."""
+    from .selftest import run_helper
+
+    raise typer.Exit(run_helper(list(ctx.args)))
+
+
 @app.command("demo")
 @guarded
 def demo_command(

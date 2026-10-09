@@ -132,7 +132,7 @@ def _config_trap_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir
     markers = {name: (markers_dir or root) / f"{prefix}-{name}" for name in CONFIG_TRIPS}
 
     def command(name: str) -> str:
-        return f'"{Path(sys.executable).as_posix()}" "{trap.as_posix()}" "{markers[name].as_posix()}" {name}'
+        return _tripwire_command(trap, markers[name], name)
 
     _git_run(git, repo, "init", "-q", "-b", "main")
     for version in ("one", "two"):
@@ -251,8 +251,8 @@ def check_hung_process_tree_is_killed() -> str:
     code = ("import subprocess, sys, time; "
             "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(40)']); time.sleep(40)")
     errfile = tempfile.TemporaryFile()
-    proc = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                            stderr=errfile, **_spawn_flags())
+    argv = [sys.executable, "selftest-helper", "stall"] if _frozen() else [sys.executable, "-c", code]
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=errfile, **_spawn_flags())
     run = _Run(proc, errfile, timeout=1.0)
     started = time.monotonic()
     try:
@@ -578,6 +578,52 @@ def _write_tripwire(path: Path) -> Path:
     return path
 
 
+def _frozen() -> bool:
+    """True in a stand-alone build, where `sys.executable` is memdebug itself and cannot run a Python script."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def _tripwire_command(trap: Path, marker: Path, name: str, quote: str = '"') -> str:
+    """The command line a hostile repository is made to run: the tripwire script under this Python, or in a stand-alone build memdebug's own helper.
+
+    Args:
+        trap: The tripwire script.
+        marker: The file it records into.
+        name: What it records as its first argument (which setting ran it).
+        quote: The quote character put around each word (a hook script wants single quotes).
+    """
+    exe = Path(sys.executable).as_posix()
+    words = [exe, "selftest-helper", "tripwire", marker.as_posix(), name] if _frozen() else [exe, trap.as_posix(), marker.as_posix(), name]
+    return " ".join(f"{quote}{word}{quote}" for word in words)
+
+
+def run_helper(args: list[str]) -> int:
+    """The few jobs `memdebug selftest` hands to a second process when the build has no Python to run a script with.
+
+    This is not a way to run code: each job is fixed, and anything else is refused.
+
+    Args:
+        args: The job and its arguments. `tripwire MARKER NAME...` runs the tripwire exactly as the script would; `stall` starts a
+            sleeping child and sleeps itself (to be killed); `sleep` sleeps.
+
+    Returns:
+        The process exit code.
+    """
+    kind = args[0] if args else ""
+    if kind == "tripwire" and len(args) >= 3:
+        sys.argv = ["tripwire", *args[1:]]
+        exec(compile(_TRIPWIRE, "<tripwire>", "exec"), {"__name__": "__main__"})  # our own fixed source, never a caller's
+        return 0
+    if kind == "stall":
+        subprocess.Popen([sys.executable, "selftest-helper", "sleep"])
+        time.sleep(40)
+        return 0
+    if kind == "sleep":
+        time.sleep(40)
+        return 0
+    return 2
+
+
 def _hostile_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
     """Build a repository whose own config names programs for git to run, each one the tripwire.
 
@@ -598,10 +644,9 @@ def _hostile_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Pa
     repo = root / "repo"
     repo.mkdir()
     markers = {name: (markers_dir or root) / f"{prefix}-{name}" for name in TRIPS}
-    python = Path(sys.executable).as_posix()
 
     def command(name: str) -> str:
-        return f'"{python}" "{trap.as_posix()}" "{markers[name].as_posix()}" {name}'
+        return _tripwire_command(trap, markers[name], name)
 
     _git_run(git, repo, "init", "-q", "-b", "main")
     (repo / "a.md").write_bytes(_ORIGINAL)
@@ -615,7 +660,7 @@ def _hostile_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Pa
     hooks = root / "hooks"
     hooks.mkdir()
     for hook in ("pre-commit", "post-commit", "reference-transaction", "post-index-change"):
-        script = f"#!/bin/sh\n'{python}' '{trap.as_posix()}' '{markers['hook'].as_posix()}' hook-{hook} \"$@\" </dev/null\n"
+        script = f"#!/bin/sh\n{_tripwire_command(trap, markers['hook'], f'hook-{hook}', quote=chr(39))} \"$@\" </dev/null\n"
         (hooks / hook).write_text(script, encoding="utf-8")
         (hooks / hook).chmod(0o755)
     for key, value in (("filter.trap.clean", command("filter")), ("filter.trap.smudge", command("filter")),
