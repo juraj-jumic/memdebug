@@ -959,7 +959,7 @@ def check_command(
     for note in [w for r in summary.results for w in r.warnings][:5] + ([summary.witness_warning] if summary.witness_warning else []):
         echo(f"  warning: {safe_text(note, 300)}", err=True)
     if summary.incomplete:
-        echo("  Some notes could not be read, so this is not a clean bill of health for the stores marked above. The warnings say why.")
+        echo("  Some stores could not be read in full, so this is not a clean bill of health for the ones marked above. The warnings say why.")
     if summary.attention or summary.hinted:
         echo("  Look closer: 'memdebug serve' shows exactly what changed. 'memdebug rollback store <name> --to <snapshot>' can put markdown or folder notes back.")
     raise typer.Exit(summary.exit_code_for(strict))

@@ -170,6 +170,11 @@ simulation, but real junctions are only tested on Windows runs of the suite.
 
 Read these. They are why this is alpha software.
 
+* **A git store with a very long history is only partly read.** memdebug reads at most 100,000 file changes and 100,000,000 characters of old and new text of a
+  git store's history, oldest first, on every look. Every edit counts both its old and its new text, so a 20 KB note edited 2,500 times reaches the text limit
+  before the row limit. Past either limit the newest history is missing and the check for notes edited outside git is **off**: such an edit is neither flagged
+  nor recorded. `check` and `watch` say "NOT READ IN FULL" and `check` exits 1, so this is reported, but not yet fixed. A plain folder keeps no history and is not
+  affected. The fix is to read only the commits since the last look; it is not built.
 * **The stand-alone programs are not signed.** The GitHub release holds a program for Windows, Linux and macOS that needs no Python, built by the release
   workflow from the tagged source (PyInstaller, one file) after it passed a smoke test on that operating system. Each file has a checksum in `SHA256SUMS` and a
   build attestation, so you can check that it came from this repository's workflow (`gh attestation verify FILE --repo juraj-jumic/memdebug`). They carry no

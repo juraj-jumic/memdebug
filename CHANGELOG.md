@@ -3,6 +3,16 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Fixed
+- **A git store with a very long history is no longer called quiet.** memdebug reads at most 100,000 file changes of a git store's history, and at most
+  100,000,000 characters of old and new text (every edit counts both versions, so a note of about 20 KB edited 2,500 times reaches the second limit first).
+  Past either limit the reader stops, the newest history is the part that is missing, and the check for notes edited behind git's back is switched off: such an
+  edit is neither flagged nor recorded. `memdebug check` still said "quiet, nothing new" with exit code 0, with only a warning after the summary. It now says
+  "NOT READ IN FULL: ... the history is too long to read in full, so edits made outside git are NOT being checked" and exits 1. The gap itself remains: reading
+  only the commits since the last look is not built yet. See docs/threat-model.md.
+
 ## [0.6.1] - 2026-10-09
 
 ### Added

@@ -41,7 +41,9 @@ class StoreResult:
         hints: Wording worth a second look in what changed, as (memory id, hint).
         previews: For each changed memory id, the text it now holds (or held before, if removed), used to label ids.
         provenance: For some flagged notes, one line about which logged agent session wrote it (see provenance.py).
-        incomplete: True if some notes could not be read, so the pass did not see the whole store.
+        incomplete: True if the pass did not see the whole store: some notes could not be read, or the history was too long to read in full.
+        history_partial: True if the store's history was only partly read (a git store beyond the row or text limit). Then changes made outside git
+            are not checked at all, and the newest history is the part that is missing.
     """
 
     store: StoreConfig
@@ -53,6 +55,7 @@ class StoreResult:
     previews: dict[str, str] = field(default_factory=dict)  # the start of what each changed memory says, to label opaque ids
     provenance: dict[str, str] = field(default_factory=dict)  # which logged agent session wrote a flagged note, in words (see provenance.py)
     incomplete: bool = False
+    history_partial: bool = False
 
     @property
     def attention(self) -> bool:
@@ -120,6 +123,13 @@ def _list(ids: list[str], limit: int = 3, previews: dict[str, str] | None = None
     return shown + (f" and {len(ids) - limit} more" if len(ids) > limit else "")
 
 
+def _why_incomplete(result: StoreResult) -> str:
+    """Say in words why a pass did not see the whole store."""
+    if result.history_partial:
+        return "the history is too long to read in full, so edits made outside git are NOT being checked"
+    return "some notes could not be read"
+
+
 def describe(result: StoreResult) -> str:
     """Return the one-line summary of a store's pass: could not be checked, quiet, or the changes found."""
     name = safe_text(result.store.name, 40)
@@ -128,14 +138,14 @@ def describe(result: StoreResult) -> str:
     if result.quiet:
         return f"  {name}: quiet, nothing new"
     if result.incomplete and not result.changes:
-        return f"  {name}: NOT READ IN FULL: nothing new in what could be read, but some notes could not be read"
+        return f"  {name}: NOT READ IN FULL: nothing new in what could be read, but {_why_incomplete(result)}"
     parts = []
     for op in (Op.EXTERNAL, Op.ADD, Op.UPDATE, Op.DELETE):
         ids = [i for o, i in result.changes if o == op]
         if ids:
             parts.append(f"{VERBS[op]}: {_list(ids, previews=result.previews)}")
     lead = "ATTENTION" if result.attention else f"{len(result.changes)} change{'' if len(result.changes) == 1 else 's'} noticed"
-    return f"  {name}: {lead} ({'; '.join(parts)})" + ("; some notes could not be read, so there may be more" if result.incomplete else "")
+    return f"  {name}: {lead} ({'; '.join(parts)})" + (f"; {_why_incomplete(result)}, so there may be more" if result.incomplete else "")
 
 
 def hint_lines(result: StoreResult) -> list[str]:
@@ -197,7 +207,8 @@ def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> S
         return result
     result.warnings = [safe_text(w, 300) for w in opened.notes + report.warnings]
     result.outside_history = report.external_events
-    result.incomplete = report.live is not None and not report.live.complete
+    result.history_partial = report.reconcile_skipped
+    result.incomplete = result.history_partial or (report.live is not None and not report.live.complete)
     entries = ledger.entries()
     for entry in entries[before:]:
         event = entry.event
