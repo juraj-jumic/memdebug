@@ -247,7 +247,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the ground rules (everything read fro
 * **A self-test on your machine:** `memdebug selftest` demonstrates the platform-dependent safety claims on the computer you actually use,
   and says SKIP, never PASS, for anything it could not prove there.
 * **Releases:** PyPI trusted publishing (no stored token), a manual approval before anything is published, provenance attestations (PyPI
-  holds them for 0.3.0 and 0.4.0), and branch and tag rules on `main` and on version tags.
+  holds them for every release since 0.3.0), and branch and tag rules on `main` and on version tags.
 * **Written down:** a [threat model](docs/threat-model.md), a [security policy](SECURITY.md), a [changelog](CHANGELOG.md) and a
   [roadmap](ROADMAP.md) that says what is not built yet.
 
