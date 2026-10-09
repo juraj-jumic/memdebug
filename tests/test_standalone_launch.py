@@ -31,10 +31,10 @@ def test_anything_else_is_not_a_double_click_and_runs_as_usual(changes):
     assert not decide(**changes)
 
 
-def test_the_message_names_the_file_and_says_how_to_start_it(monkeypatch, capsys):
+def test_the_message_names_the_file_and_says_how_to_start_it(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(sa, "console_process_count", lambda: 2)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", r"C:\Users\x\Downloads\memdebug-windows-x64.exe")
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "memdebug-windows-x64.exe"))  # a path in this system's own form, so the test runs everywhere
     monkeypatch.setattr(sa.os, "name", "nt")
     monkeypatch.setattr(sys, "stdin", type("Tty", (io.StringIO,), {"isatty": lambda self: True})())
     monkeypatch.setattr(sys, "stdout", type("Tty", (io.StringIO,), {"isatty": lambda self: True})())
