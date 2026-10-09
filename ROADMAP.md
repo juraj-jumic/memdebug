@@ -13,7 +13,7 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 * **An agent catalog:** `memdebug agents` and `setup` recognise Claude Code, OpenClaw, Gemini CLI, Codex CLI, Windsurf, Cline and Open WebUI in
   Docker, with locations taken from their documentation (see docs/agents.md).
 * **A registry of stores and guided use:** `setup` (finds likely memory, asks first), `add`, `stores`, `remove`, `check`
-  (exit code 1 when something needs a look), `status`, `watch`.
+  (exit code 1 when something needs a look or a note could not be read), `status`, `watch`.
 * Detection of changes that bypassed a store's own history, with false-alarm guards.
 * **Reports** in Markdown, JSON and SARIF, with CI exit codes.
 * **Rollback for plain folders** (`memdebug rollback store`, and `memdebug snapshot store` to save a known-good copy first), rebuilt from the snapshot's

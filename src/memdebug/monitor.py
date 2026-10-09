@@ -41,6 +41,7 @@ class StoreResult:
         hints: Wording worth a second look in what changed, as (memory id, hint).
         previews: For each changed memory id, the text it now holds (or held before, if removed), used to label ids.
         provenance: For some flagged notes, one line about which logged agent session wrote it (see provenance.py).
+        incomplete: True if some notes could not be read, so the pass did not see the whole store.
     """
 
     store: StoreConfig
@@ -51,6 +52,7 @@ class StoreResult:
     hints: list[tuple[str, Hint]] = field(default_factory=list)  # wording worth a second look in what changed
     previews: dict[str, str] = field(default_factory=dict)  # the start of what each changed memory says, to label opaque ids
     provenance: dict[str, str] = field(default_factory=dict)  # which logged agent session wrote a flagged note, in words (see provenance.py)
+    incomplete: bool = False
 
     @property
     def attention(self) -> bool:
@@ -59,8 +61,8 @@ class StoreResult:
 
     @property
     def quiet(self) -> bool:
-        """Whether the store was checked and nothing new was recorded."""
-        return not self.changes and self.error is None
+        """Whether the store was checked in full and nothing new was recorded. A store that could not be read in full is never quiet."""
+        return not self.changes and self.error is None and not self.incomplete
 
 
 @dataclass
@@ -93,8 +95,13 @@ class CheckSummary:
         return any(r.hints for r in self.results)
 
     def exit_code_for(self, strict: bool = False) -> int:
-        """1: something needs a look (with strict, also wording worth a second look); 2: a store could not be checked; else 0."""
-        return 1 if (self.attention or (strict and self.hinted)) else 2 if self.failed else 0
+        """1: something needs a look, or a store could not be read in full (with strict, also wording worth a second look); 2: a store could not be checked; else 0."""
+        return 1 if (self.attention or self.incomplete or (strict and self.hinted)) else 2 if self.failed else 0
+
+    @property
+    def incomplete(self) -> bool:
+        """Whether any store could not be read in full, so a quiet pass would not mean the memory is unchanged."""
+        return any(r.incomplete for r in self.results)
 
     @property
     def failed(self) -> bool:
@@ -103,8 +110,8 @@ class CheckSummary:
 
     @property
     def exit_code(self) -> int:
-        """The process exit code without strict mode: 1 for attention, 2 for a store that failed, else 0."""
-        return 1 if self.attention else 2 if self.failed else 0
+        """The process exit code without strict mode: 1 for attention or a store not read in full, 2 for a store that failed, else 0."""
+        return 1 if (self.attention or self.incomplete) else 2 if self.failed else 0
 
 
 def _list(ids: list[str], limit: int = 3, previews: dict[str, str] | None = None) -> str:
@@ -120,13 +127,15 @@ def describe(result: StoreResult) -> str:
         return f"  {name}: COULD NOT BE CHECKED: {result.error}"
     if result.quiet:
         return f"  {name}: quiet, nothing new"
+    if result.incomplete and not result.changes:
+        return f"  {name}: NOT READ IN FULL: nothing new in what could be read, but some notes could not be read"
     parts = []
     for op in (Op.EXTERNAL, Op.ADD, Op.UPDATE, Op.DELETE):
         ids = [i for o, i in result.changes if o == op]
         if ids:
             parts.append(f"{VERBS[op]}: {_list(ids, previews=result.previews)}")
     lead = "ATTENTION" if result.attention else f"{len(result.changes)} change{'' if len(result.changes) == 1 else 's'} noticed"
-    return f"  {name}: {lead} ({'; '.join(parts)})"
+    return f"  {name}: {lead} ({'; '.join(parts)})" + ("; some notes could not be read, so there may be more" if result.incomplete else "")
 
 
 def hint_lines(result: StoreResult) -> list[str]:
@@ -188,6 +197,7 @@ def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> S
         return result
     result.warnings = [safe_text(w, 300) for w in opened.notes + report.warnings]
     result.outside_history = report.external_events
+    result.incomplete = report.live is not None and not report.live.complete
     entries = ledger.entries()
     for entry in entries[before:]:
         event = entry.event
@@ -360,10 +370,11 @@ def baseline(store: StoreConfig, ledger: Ledger, label: str = "baseline", *, ref
 def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[str], None], ring: Callable[[], None] = lambda: None,
           cycles: int | None = None, sleep: Callable[[float], None] = time.sleep, settle: float = 1.0, ledger_path: Path | None = None,
           clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
-    """Check every store again and again. Only things worth knowing are printed: changes, and an error when it first appears."""
+    """Check every store again and again. Only things worth knowing are printed: changes, and an error or a store not read in full when it first appears."""
     every = max(MIN_INTERVAL, every)
     say(f"Watching {len(registry.stores)} store(s) every {every:g} seconds. Press Ctrl+C to stop.")
     last_error: dict[str, str | None] = {}
+    last_incomplete: dict[str, bool] = {}
     done = 0
     while cycles is None or done < cycles:
         summary = check_all(registry, ledger, settle=settle, ledger_path=ledger_path)
@@ -373,6 +384,10 @@ def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[st
             if result.error and last_error.get(result.store.name) == result.error:
                 continue
             last_error[result.store.name] = result.error
+            said_incomplete = last_incomplete.get(result.store.name, False)
+            last_incomplete[result.store.name] = result.incomplete
+            if result.incomplete and said_incomplete and not result.changes:
+                continue  # said once when it began, not again at every look
             if not result.quiet:
                 say(f"[{stamp}]{describe(result)}")
                 for line in [*hint_lines(result), *provenance_lines(result)]:
@@ -381,7 +396,7 @@ def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[st
         if not summary.ledger_ok:
             say(f"[{stamp}]  PROBLEM: the ledger failed its integrity check")
             shown = True
-        if shown and (summary.attention or summary.hinted):
+        if shown and (summary.attention or summary.hinted or summary.incomplete):
             ring()
         done += 1
         if cycles is None or done < cycles:

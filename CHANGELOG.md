@@ -12,6 +12,13 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   junction, leaves a backup that holds a link alone, and reads the age from the folder's name. Backups beyond Windows' 259-character path limit work.
 
 ### Changed
+- **A store that could not be read in full is no longer called quiet.** When a note could not be read (a folder that is a link or junction, a file that
+  cannot be opened, an unsafe name, too many files), `memdebug check` used to say "quiet, nothing new" and exit 0, with only a warning after the
+  summary. It now says "NOT READ IN FULL" for that store, adds "so there may be more" to a store with changes, ends with "this is not a clean bill of
+  health", and **exits 1** (the code for "needs a look"). Scripts and CI that treated 0 as "nothing to see" will now see 1 for such a store; the warnings
+  say what could not be read. `memdebug watch` says so once when it begins, not at every look. A rollback to a snapshot taken from an incomplete listing
+  no longer says "every file in scope already matches the snapshot"; it says the snapshot cannot vouch for notes missing from it. `memdebug report` reads
+  the ledger only and is unchanged.
 - `memdebug selftest`, "hostile repository config cannot run programs", now means more. It only read history, which never makes git run a configured
   program, so it could pass without testing the protection. Its control now makes ordinary git run the external-diff and file-system-monitor settings
   (a `git status` and a patch with the external diff allowed), says which it managed, and the protected phase asks memdebug's own git wrapper for the same

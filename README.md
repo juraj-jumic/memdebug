@@ -51,7 +51,7 @@ You point memdebug at the memory; it does not hook into the agent.
 
     memdebug agents      # which AI agents are on this computer, and what each keeps (looks at folder names only)
     memdebug setup       # finds that memory, asks before adding anything, saves a first snapshot of each
-    memdebug check       # looks for changes once; exit code 1 means something needs a look
+    memdebug check       # looks for changes once; exit code 1 means something needs a look or a note could not be read
     memdebug watch       # keeps looking and says so when something changes (Ctrl+C to stop)
     memdebug serve       # the same story in your browser, read-only
 

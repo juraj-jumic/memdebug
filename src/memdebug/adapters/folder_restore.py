@@ -103,7 +103,7 @@ class FolderRestorer(FileOps):
         adapter = self._adapter
         if info.backend != adapter.name or info.scope != {"store": adapter.store}:
             raise RestoreError("that snapshot was taken from a different memory store")
-        plan = Plan(snapshot_id=info.id, store=adapter.store)
+        plan = Plan(snapshot_id=info.id, store=adapter.store, snapshot_complete=info.complete)
         problem = self._backup_problem()
         if problem is not None:
             plan.blockers.append(problem)

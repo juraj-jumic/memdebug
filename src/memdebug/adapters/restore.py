@@ -118,6 +118,7 @@ class Plan:
         warnings: Notes that do not stop the rollback.
         blockers: Reasons the rollback cannot be applied now.
         plan_id: A digest of what the plan would do. `apply` refuses to run if a fresh plan has a different one.
+        snapshot_complete: False if the snapshot was taken from an incomplete listing, so notes missing from it cannot be restored.
     """
 
     snapshot_id: str
@@ -131,6 +132,7 @@ class Plan:
     warnings: list[str] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)   # reasons it cannot be applied now
     plan_id: str = ""
+    snapshot_complete: bool = True
 
     @property
     def commits(self) -> bool:
@@ -332,7 +334,7 @@ class Restorer(FileOps):
         adapter = self._adapter
         if info.backend != adapter.name or info.scope != {"store": adapter.store}:
             raise RestoreError("that snapshot was taken from a different memory store")
-        plan = Plan(snapshot_id=info.id, store=adapter.store)
+        plan = Plan(snapshot_id=info.id, store=adapter.store, snapshot_complete=info.complete)
         self._git_state(plan)
         by_path = {m.id: m for m in snapshot.memories}
         chosen: set[str] | None = None

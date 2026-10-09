@@ -533,7 +533,11 @@ def _print_plan(plan: Plan, snapshot_label: str, full: bool) -> None:
             for line in line_diff(item.live_text or "", item.target_text or "")[:60]:
                 echo(f"        {safe_text(line, 160)}")
     if not plan.items:
-        echo("  Nothing to restore: every file in scope already matches the snapshot.")
+        if plan.snapshot_complete:
+            echo("  Nothing to restore: every file in scope already matches the snapshot.")
+        else:
+            echo("  Nothing to restore among the files the snapshot holds. That snapshot is incomplete (some notes could not be read when it")
+            echo("  was taken), so it cannot vouch for the rest: a note missing from it could not be put back.")
     if plan.kept_new:
         shown = ", ".join(safe_text(n, 40) for n in plan.kept_new[:5]) + (" ..." if len(plan.kept_new) > 5 else "")
         echo(f"\nAdded since the snapshot and left alone: {shown}  (use --remove-added to remove them)")
@@ -934,7 +938,7 @@ def check_command(
     settle: float = SETTLE_OPTION,
     db: Path = DB_OPTION,
 ) -> NoReturn:
-    """Look at every watched store once: what changed since last time, and is anything wrong? Exit code 1 means something needs a look."""
+    """Look at every watched store once: what changed since last time, and is anything wrong? Exit code 1 means something needs a look, or a store could not be read in full."""
     registry = load_registry(_config_path(db))
     if not registry.stores:
         echo("Nothing to check yet. Run 'memdebug setup' for a guided start, or 'memdebug add <path>'.")
@@ -946,6 +950,8 @@ def check_command(
         echo(line)
     for note in [w for r in summary.results for w in r.warnings][:5] + ([summary.witness_warning] if summary.witness_warning else []):
         echo(f"  warning: {safe_text(note, 300)}", err=True)
+    if summary.incomplete:
+        echo("  Some notes could not be read, so this is not a clean bill of health for the stores marked above. The warnings say why.")
     if summary.attention or summary.hinted:
         echo("  Look closer: 'memdebug serve' shows exactly what changed. 'memdebug rollback store <name> --to <snapshot>' can put markdown or folder notes back.")
     raise typer.Exit(summary.exit_code_for(strict))
