@@ -3,7 +3,7 @@
 Where memdebug is and where it is going. It is alpha software: the pieces below that are built work and are tested,
 but expect rough edges and breaking changes before 1.0. Order is a plan, not a promise.
 
-## Built (0.4)
+## Built (0.5)
 
 * Tamper-evident ledger (hash chain) with `verify`, snapshots whose content is chained in, and compare.
 * **Witness:** a second copy of the ledger's head kept elsewhere, so a rewritten or cut-short ledger is noticed.

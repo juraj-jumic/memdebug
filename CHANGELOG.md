@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-09
 
 ### Added
 - **`memdebug backups list` and `memdebug backups clean`.** The backups a plain-folder rollback leaves next to the ledger piled up with no way to
