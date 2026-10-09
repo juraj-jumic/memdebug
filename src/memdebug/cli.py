@@ -1,3 +1,9 @@
+"""The `memdebug` command: a Typer application with one function per command.
+
+Commands only call into the rest of the package and print the result.
+Everything shown goes through `echo`, which escapes text the console cannot
+show. `guarded` turns expected errors into a short message and exit code 2.
+"""
 import functools
 import os
 import re
@@ -5,11 +11,12 @@ import tempfile
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, cast
+from typing import Any, Callable, NoReturn, Optional, ParamSpec, TypeVar, cast
 
 import typer
 
 from . import longpath
+from .adapters.base import MemoryAdapter
 from .adapters.folder import FolderAdapter
 from .adapters.folder_restore import FolderRestorer
 from .adapters.markdown_git import MarkdownGitAdapter
@@ -23,6 +30,7 @@ from .diff import Diff, diff_snapshots, line_diff
 from .docker_source import valid_container
 from .errors import MemdebugError
 from .ledger import Ledger
+from .models import Snapshot
 from .monitor import alarms_since_snapshot, baseline, check_all, check_store, status_lines, store_hints, summary_lines, watch
 from .paths import backup_root_for, default_ledger_path
 from .report import RENDERERS, build_report, write_report
@@ -30,6 +38,7 @@ from .rollback_flow import Restoring, run_rollback
 from .stores import (
     KIND_NAMES,
     KINDS,
+    Registry,
     StoreConfig,
     detect_kind,
     discover_docker,
@@ -54,7 +63,7 @@ def _show_version(show: bool) -> None:
 
 
 @app.callback()
-def _main(version: bool = typer.Option(False, "--version", callback=_show_version, is_eager=True, help="Show the version and exit.")):
+def _main(version: bool = typer.Option(False, "--version", callback=_show_version, is_eager=True, help="Show the version and exit.")) -> None:
     pass
 
 DB_OPTION = typer.Option(
@@ -72,17 +81,30 @@ def _open_ledger(db: Optional[Path]) -> Ledger:
     return Ledger(db)
 
 
-def echo(text: str, **kwargs) -> None:
+def echo(text: str, **kwargs: Any) -> None:
+    """Prints text to the console, escaping what it cannot show.
+
+    Args:
+        text: What to print. Characters the console's encoding cannot show
+            become visible escapes instead of raising.
+        **kwargs: Passed on to typer.echo (for example err=True).
+    """
     typer.echo(console_safe(text), **kwargs)
 
 
-def guarded(func):
-    """Turn expected errors into a clean message and exit code, and hide tracebacks that
-    could expose paths or values unless MEMDEBUG_DEBUG is set.
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def guarded(func: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Turns expected errors into a clean message and exit code.
+
+    Also hides tracebacks that could expose paths or values unless
+    MEMDEBUG_DEBUG is set.
     """
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         try:
             return func(*args, **kwargs)
         except MemdebugError as exc:
@@ -104,7 +126,7 @@ def guarded(func):
 
 @app.command()
 @guarded
-def timeline(db: Path = DB_OPTION, limit: int = typer.Option(50, min=1, max=10_000, help="Newest entries to show.")):
+def timeline(db: Path = DB_OPTION, limit: int = typer.Option(50, min=1, max=10_000, help="Newest entries to show.")) -> None:
     """Show memory events, newest first. Memory text is shown escaped, never raw."""
     entries = _open_ledger(db).entries()[::-1][:limit]
     if not entries:
@@ -126,7 +148,7 @@ def verify(
     db: Path = DB_OPTION,
     expected_head: Optional[str] = typer.Option(None, help="Head hash recorded in a snapshot."),
     witness: Optional[Path] = typer.Option(None, "--witness", help="Also check the ledger against this witness file."),
-):
+) -> None:
     """Check that the ledger has not been edited (and, with --witness, not rewritten or cut short)."""
     ledger = _open_ledger(db)
     result = ledger.verify(expected_head)
@@ -161,7 +183,7 @@ def report_command(
     witness: Optional[Path] = typer.Option(None, "--witness", help="Also check the ledger against this witness file."),
     fail_on: str = typer.Option("none", "--fail-on", help="'findings': exit 1 if anything needs a look; 'hints': also if any wording looks worth a second look (for CI). Default: only a failed integrity check does."),
     db: Path = DB_OPTION,
-):
+) -> None:
     """A report on the ledger: integrity, what changed outside the store's own history, rollbacks and snapshots."""
     if fmt not in RENDERERS or fail_on not in ("none", "findings", "hints"):
         raise MemdebugError("--format must be markdown, json or sarif, and --fail-on must be none, findings or hints")
@@ -183,7 +205,7 @@ def report_command(
 def witness_command(
     file: Path = typer.Option(..., "--file", help="The witness file (created if missing). Keep it away from the ledger."),
     db: Path = DB_OPTION,
-):
+) -> None:
     """Record the ledger's newest entry in a witness file kept somewhere else, so rewriting or cutting the ledger is noticed."""
     ledger = _open_ledger(db)
     if not ledger.verify().ok:
@@ -205,7 +227,7 @@ SETTLE_OPTION = typer.Option(1.0, min=0.0, max=60.0, help="Seconds between the t
 ADOPT_OPTION = typer.Option(False, help="First sync only: record memories without history as ADDs.")
 
 
-def _run_sync(adapter, ledger, scope, adopt_existing, settle, notes):
+def _run_sync(adapter: MemoryAdapter, ledger: Ledger, scope: dict[str, str], adopt_existing: bool, settle: float, notes: list[str]) -> None:
     report = sync(adapter, ledger, scope, adopt_existing=adopt_existing, settle_seconds=settle)
     for note in notes + report.warnings:
         echo(f"warning: {safe_text(note, 300)}", err=True)
@@ -222,7 +244,9 @@ MD_STORE_OPTION = typer.Option(None, "--store", help="A name for this memory sto
 MD_SUBDIR_OPTION = typer.Option(None, "--subdir", help="Only read this folder inside the repository.")
 
 
-def _setup_mem0(history_db, config, user_id, agent_id, run_id):
+def _setup_mem0(
+    history_db: Path, config: Optional[Path], user_id: Optional[str], agent_id: Optional[str], run_id: Optional[str]
+) -> tuple[Mem0Adapter, dict[str, str], list[str]]:
     scope = validate_scope(
         {k: v for k, v in (("user_id", user_id), ("agent_id", agent_id), ("run_id", run_id)) if v is not None}
     )
@@ -230,7 +254,7 @@ def _setup_mem0(history_db, config, user_id, agent_id, run_id):
     return Mem0Adapter(memory, history_db), scope, notes
 
 
-def _setup_markdown(path, store, subdir):
+def _setup_markdown(path: Path, store: Optional[str], subdir: Optional[str]) -> tuple[MarkdownGitAdapter, dict[str, str], list[str]]:
     adapter = MarkdownGitAdapter(path, store=store, subdir=subdir)
     return adapter, {"store": adapter.store}, []
 
@@ -246,7 +270,7 @@ def sync_mem0(
     run_id: Optional[str] = typer.Option(None, "--run-id"),
     adopt_existing: bool = ADOPT_OPTION,
     settle: float = SETTLE_OPTION,
-):
+) -> None:
     """Self-hosted Mem0: history from its history.db, live memories through its own API."""
     adapter, scope, notes = _setup_mem0(mem0_history_db, mem0_config, user_id, agent_id, run_id)
     _run_sync(adapter, _open_ledger(db), scope, adopt_existing, settle, notes)
@@ -261,8 +285,10 @@ def sync_markdown(
     subdir: Optional[str] = MD_SUBDIR_OPTION,
     adopt_existing: bool = ADOPT_OPTION,
     settle: float = SETTLE_OPTION,
-):
-    """Markdown files in a git repository: history from git log, live memories from the working tree.
+) -> None:
+    """Sync markdown notes in a git repository into the ledger.
+
+    History comes from git log and live memories from the working tree.
     Uncommitted edits show up as changes made outside the history.
     """
     adapter, scope, notes = _setup_markdown(path, store, subdir)
@@ -306,7 +332,10 @@ def _print_diff(result: Diff, full: bool = False, limit: int = 200) -> None:
         echo(f"... and {len(result.changes) - limit} more (use --limit to show more)")
 
 
-def _run_snapshot(adapter, ledger, scope, notes, settle, label, diff_from, adopt_existing=False):
+def _run_snapshot(
+    adapter: MemoryAdapter, ledger: Ledger, scope: dict[str, str], notes: list[str], settle: float, label: Optional[str],
+    diff_from: Optional[str], adopt_existing: bool = False,
+) -> None:
     previous = ledger.load_snapshot(diff_from) if diff_from else None  # fail before doing any work
     report = sync(adapter, ledger, scope, adopt_existing=adopt_existing, settle_seconds=settle)
     live = report.live
@@ -340,7 +369,7 @@ def snapshot_mem0(
     diff_from: Optional[str] = DIFF_FROM_OPTION,
     adopt_existing: bool = ADOPT_OPTION,
     settle: float = SETTLE_OPTION,
-):
+) -> None:
     """Sync, then save a snapshot of a self-hosted Mem0 store."""
     adapter, scope, notes = _setup_mem0(mem0_history_db, mem0_config, user_id, agent_id, run_id)
     _run_snapshot(adapter, _open_ledger(db), scope, notes, settle, label, diff_from, adopt_existing)
@@ -357,7 +386,7 @@ def snapshot_markdown(
     diff_from: Optional[str] = DIFF_FROM_OPTION,
     adopt_existing: bool = ADOPT_OPTION,
     settle: float = SETTLE_OPTION,
-):
+) -> None:
     """Sync, then save a snapshot of markdown memory files in a git repository."""
     adapter, scope, notes = _setup_markdown(path, store, subdir)
     _run_snapshot(adapter, _open_ledger(db), scope, notes, settle, label, diff_from, adopt_existing)
@@ -371,10 +400,14 @@ def snapshot_store(
     include_changes: bool = typer.Option(False, "--include-changes", help="Save it even though the ledger holds changes you have not reviewed."),
     settle: float = SETTLE_OPTION,
     db: Path = DB_OPTION,
-):
-    """Save a snapshot of a watched store as it is now, so 'memdebug rollback store' can put it back later. A snapshot is what a
-    rollback treats as good, so this refuses when the ledger holds an outside-history change or suspicious wording recorded since
-    the store's last snapshot: look at that first ('memdebug serve'), then add --include-changes if it is fine.
+) -> None:
+    """Save a snapshot of a watched store as it is now.
+
+    That is what 'memdebug rollback store' can put back later. A snapshot is
+    what a rollback treats as good, so this refuses when the ledger holds an
+    outside-history change or suspicious wording recorded since the store's
+    last snapshot: look at that first ('memdebug serve'), then add
+    --include-changes if it is fine.
     """
     cfg = _watched_store(name, db)
     if label is not None and not 0 < len(label) <= 100:
@@ -404,7 +437,7 @@ def snapshot_store(
 
 @snapshot_app.command("list")
 @guarded
-def snapshot_list(db: Path = DB_OPTION):
+def snapshot_list(db: Path = DB_OPTION) -> None:
     """List saved snapshots."""
     infos = _open_ledger(db).list_snapshots()
     if not infos:
@@ -425,7 +458,7 @@ def snapshot_delete(
     snapshot_id: str = typer.Argument(..., help="For example s1."),
     db: Path = DB_OPTION,
     yes: bool = typer.Option(False, "--yes", help="Do not ask for confirmation."),
-):
+) -> None:
     """Delete a snapshot. The deletion is recorded in the ledger; the texts only that snapshot used are removed."""
     if not yes:
         typer.confirm(f"Delete snapshot {safe_text(snapshot_id, 12)}? This cannot be undone.", abort=True)
@@ -441,7 +474,7 @@ def diff_command(
     db: Path = DB_OPTION,
     full: bool = typer.Option(False, "--full", help="Show a line-by-line diff of each changed memory."),
     limit: int = typer.Option(200, min=1, max=100_000, help="Most changes to list."),
-):
+) -> None:
     """Show what changed between two snapshots."""
     ledger = _open_ledger(db)
     _print_diff(diff_snapshots(ledger.load_snapshot(old), ledger.load_snapshot(new)), full=full, limit=limit)
@@ -449,17 +482,19 @@ def diff_command(
 
 @app.command()
 @guarded
-def where():
+def where() -> None:
     """Show where the default ledger is kept."""
     echo(str(default_ledger_path()))
 
 
 @app.command()
 @guarded
-def selftest():
-    """Check on THIS machine that the safety protections work (git isolation, read-only access,
-    killing a hung git, symlink and junction handling, path rules). Run it once on every new
-    platform, especially Windows.
+def selftest() -> None:
+    """Check on THIS machine that the safety protections work.
+
+    That covers git isolation, read-only access, killing a hung git, symlink
+    and junction handling, and path rules. Run it once on every new platform,
+    especially Windows.
     """
     from .selftest import run_all
 
@@ -527,9 +562,11 @@ def rollback_markdown(
     apply: bool = typer.Option(False, "--apply", help="Do it. Without this, nothing is changed."),
     yes: bool = typer.Option(False, "--yes", help="Do not ask for confirmation (needed when not at a keyboard)."),
     settle: float = SETTLE_OPTION,
-):
-    """Markdown files in a git repository: restore them to a snapshot with a new commit. History is never rewritten,
-    anything not already in git is backed up first, and the rollback can itself be undone.
+) -> None:
+    """Restore markdown files in a git repository to a snapshot.
+
+    The restore is one new commit. History is never rewritten, anything not
+    already in git is backed up first, and the rollback can itself be undone.
     """
     ledger = _open_ledger(db)
     snapshot = ledger.load_snapshot(to)  # fail before doing any work
@@ -540,7 +577,7 @@ def rollback_markdown(
                       record_command="memdebug sync markdown --path ...")
 
 
-def _rollback_command(adapter, scope: dict[str, str], restorer: Restoring, ledger: Ledger, snapshot, *, only: list[str],
+def _rollback_command(adapter: MemoryAdapter, scope: dict[str, str], restorer: Restoring, ledger: Ledger, snapshot: Snapshot, *, only: list[str],
                       remove_added: bool, full: bool, apply: bool, yes: bool, settle: float, undo_command: str, record_command: str) -> None:
     """Plan, show, confirm and carry out a rollback. Shared by every store type, so they all behave the same way."""
     chosen = list(only)
@@ -596,10 +633,14 @@ def rollback_store(
     apply: bool = typer.Option(False, "--apply", help="Do it. Without this, nothing is changed."),
     yes: bool = typer.Option(False, "--yes", help="Do not ask for confirmation (needed when not at a keyboard)."),
     settle: float = SETTLE_OPTION,
-):
-    """A watched store, by name: markdown notes in git (restored with a new commit) or a plain folder of notes (changed in place,
-    with whatever is replaced saved first). A folder is rebuilt from the snapshot's text, which does not keep line endings exactly.
-    Open WebUI and Mem0 keep their memory in databases that memdebug only ever reads, so they cannot be rolled back.
+) -> None:
+    """Roll back a watched store, by name, to a snapshot.
+
+    Markdown notes in git are restored with a new commit; a plain folder of
+    notes is changed in place, with whatever is replaced saved first. A folder
+    is rebuilt from the snapshot's text, which does not keep line endings
+    exactly. Open WebUI and Mem0 keep their memory in databases that memdebug
+    only ever reads, so they cannot be rolled back.
     """
     cfg = _watched_store(name, db)
     if cfg.kind not in ("markdown", "folder"):
@@ -623,9 +664,11 @@ def demo_command(
     folder: Optional[Path] = typer.Option(None, "--dir", help="Work in this new or empty folder (it is kept). Default: a temporary folder."),
     keep: bool = typer.Option(False, "--keep", help="Keep the temporary folder afterwards."),
     serve_viewer: bool = typer.Option(False, "--serve", help="Afterwards, open the demo ledger in the browser viewer."),
-):
-    """Try memdebug in about a minute: a made-up agent memory, a made-up attack, and what you would see.
-    It works in a throwaway folder and never reads or changes anything of yours.
+) -> None:
+    """Try memdebug in about a minute.
+
+    A made-up agent memory, a made-up attack, and what you would see. It works
+    in a throwaway folder and never reads or changes anything of yours.
     """
     from .demo import prepare_folder, remove_folder, run_demo
 
@@ -683,7 +726,7 @@ def _copies_dir(db: Optional[Path]) -> Path:
     return _config_path(db).parent / "copies"
 
 
-def _register(registry, path: Path, *, name: Optional[str], kind: Optional[str], user_id: Optional[str], agent_id: Optional[str],
+def _register(registry: Registry, path: Path, *, name: Optional[str], kind: Optional[str], user_id: Optional[str], agent_id: Optional[str],
               run_id: Optional[str], subdir: Optional[str], docker: Optional[str] = None, files: Optional[str] = None) -> StoreConfig:
     """Check that a store can be opened, then add it to the registry (not yet saved)."""
     resolved = longpath.resolve(path.expanduser())
@@ -732,7 +775,7 @@ def add_command(
     files: Optional[str] = typer.Option(None, "--files", help="A folder store only: watch just these markdown files in it (comma-separated), nothing else in the folder."),
     baseline_now: bool = typer.Option(True, "--baseline/--no-baseline", help="Save a first snapshot right away (recommended)."),
     db: Path = DB_OPTION,
-):
+) -> None:
     """Tell memdebug to watch a memory store, once. After that, 'memdebug check' looks at it and 'memdebug watch' keeps looking."""
     ledger = _open_ledger(db)
     config = _config_path(db)
@@ -758,7 +801,7 @@ def add_command(
 
 @app.command("stores")
 @guarded
-def stores_command(db: Path = DB_OPTION):
+def stores_command(db: Path = DB_OPTION) -> None:
     """List the stores memdebug watches."""
     registry = load_registry(_config_path(db))
     if not registry.stores:
@@ -772,7 +815,7 @@ def stores_command(db: Path = DB_OPTION):
 
 @app.command("remove")
 @guarded
-def remove_command(name: str = typer.Argument(..., help="The store's name."), db: Path = DB_OPTION):
+def remove_command(name: str = typer.Argument(..., help="The store's name."), db: Path = DB_OPTION) -> None:
     """Stop watching a store. What was already recorded about it stays in the ledger."""
     config = _config_path(db)
     registry = load_registry(config)
@@ -787,7 +830,7 @@ def check_command(
     strict: bool = typer.Option(False, "--strict", help="Also exit with code 1 when changed wording looks worth a second look (for CI)."),
     settle: float = SETTLE_OPTION,
     db: Path = DB_OPTION,
-):
+) -> NoReturn:
     """Look at every watched store once: what changed since last time, and is anything wrong? Exit code 1 means something needs a look."""
     registry = load_registry(_config_path(db))
     if not registry.stores:
@@ -807,7 +850,7 @@ def check_command(
 
 @app.command("status")
 @guarded
-def status_command(db: Path = DB_OPTION):
+def status_command(db: Path = DB_OPTION) -> None:
     """Where things stand, without looking for new changes or writing anything."""
     registry = load_registry(_config_path(db))
     if not registry.stores:
@@ -827,7 +870,7 @@ def watch_command(
     bell: bool = typer.Option(True, "--bell/--no-bell", help="Ring the terminal bell when something needs a look."),
     settle: float = SETTLE_OPTION,
     db: Path = DB_OPTION,
-):
+) -> None:
     """Keep looking at every watched store and say so when something changes. Stop with Ctrl+C."""
     registry = load_registry(_config_path(db))
     if not registry.stores:
@@ -843,7 +886,7 @@ def watch_command(
 
 @app.command("agents")
 @guarded
-def agents_command():
+def agents_command() -> None:
     """Which AI agents memdebug can see on this computer, and what each keeps. Only looks at folder names; changes nothing."""
     for line in agent_lines(scan_agents(), [c.docker for c in discover_docker(Path(tempfile.gettempdir())) if c.docker]):
         echo(line)
@@ -855,7 +898,7 @@ def agents_command():
 def setup_command(
     yes: bool = typer.Option(False, "--yes", help="Accept everything that is found and ask nothing."),
     db: Path = DB_OPTION,
-):
+) -> None:
     """A guided start: find the memory your agents keep on this computer, save a first snapshot of each, and optionally set up a witness."""
     ledger = _open_ledger(db)
     config = _config_path(db)
@@ -934,7 +977,7 @@ def serve_command(
     db: Path = DB_OPTION,
     port: int = typer.Option(8765, min=0, max=65535, help="Port on this computer (0 picks a free one)."),
     open_browser: bool = typer.Option(False, "--open", help="Open the link in your browser (it contains the secret)."),
-):
+) -> None:
     """Start a read-only viewer on this computer only (127.0.0.1). Open the link it prints."""
     import logging
 

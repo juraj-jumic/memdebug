@@ -89,7 +89,7 @@ def prepare_folder(folder: Path | None) -> tuple[Path, bool]:
 def remove_folder(path: Path) -> None:
     """Delete a demo folder. Git marks its object files read-only, which Windows refuses to delete without a nudge."""
 
-    def nudge(function, target, *_):
+    def nudge(function, target, *_) -> None:
         try:
             os.chmod(target, stat.S_IWRITE)
             function(target)
