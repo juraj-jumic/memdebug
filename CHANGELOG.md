@@ -3,6 +3,11 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Documentation
+- The README is now a short introduction (install, demo, watching your own agent, rolling back). The long parts moved, unchanged, to `docs/usage.md`, `docs/rollback.md`, `docs/how-it-works.md` and `docs/windows.md`.
+
 ## [0.4.1] - 2026-10-09
 
 ### Fixed
