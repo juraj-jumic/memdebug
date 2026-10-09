@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [Unreleased]
+## [0.6.0] - 2026-10-09
 
 ### Added
 - **Stand-alone programs.** The release workflow now builds `memdebug` for Windows (x64), Linux (x64) and macOS (arm64) as a single file that needs no Python

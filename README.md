@@ -23,12 +23,12 @@ computer. It does not block attacks as they happen (run it next to runtime guard
 behind a flagged change, as evidence and never as proof; for any other agent it cannot say *which conversation* wrote a memory. See
 [docs/threat-model.md](docs/threat-model.md) for exactly what it does and does not do.
 
-> **Status: alpha (0.5).** The parts described here work. The tests run on every push on Linux, Windows and macOS (Python 3.10, 3.12 and 3.14), and
+> **Status: alpha (0.6).** The parts described here work. The tests run on every push on Linux, Windows and macOS (Python 3.10, 3.12 and 3.14), and
 > the author also runs them on Windows 11, but expect rough edges. [ROADMAP.md](ROADMAP.md) lists what is built and what is next.
 
 ## Try it in a minute
 
-You need Python 3.10 or newer and git 2.31 or newer.
+You need git 2.31 or newer, and either Python 3.10 or newer or the stand-alone program (see below).
 
     pipx install memdebug
     memdebug demo                 # made-up agent, made-up attack, the real tools; nothing of yours is touched
@@ -40,6 +40,18 @@ No pipx? Use a virtual environment, which works the same way everywhere:
     pip install memdebug
 
 If your shell cannot find the `memdebug` command, `python -m memdebug` (on Windows `py -m memdebug`) does the same thing.
+
+**No Python?** Download the program for your system from the [latest release](https://github.com/juraj-jumic/memdebug/releases/latest)
+(`memdebug-windows-x64.exe`, `memdebug-linux-x64` or `memdebug-macos-arm64`) and run it from a terminal in the folder you saved it to, in place of
+`memdebug` in everything below:
+
+    .\memdebug-windows-x64.exe demo                       # Windows (PowerShell)
+    chmod +x memdebug-linux-x64 && ./memdebug-linux-x64 demo   # Linux; on macOS use memdebug-macos-arm64
+
+It is the same program with Python packed inside, and it still needs git. It is **not signed**, so Windows SmartScreen or macOS Gatekeeper may warn
+the first time (see [docs/windows.md](docs/windows.md)); compare the file with the `SHA256SUMS` on the release page before you run it. Mem0 needs the
+`pip` install, and the programs take about a second to start. Tried by the author on Windows 11; the Linux and macOS programs are built and
+smoke-tested by CI on those systems.
 
 The demo plants an instruction into a note behind git's back, shows memdebug catching it, rolls the file back without losing
 the planted text, and shows the ledger noticing a tampered copy. It works in a throwaway folder and removes it afterwards.

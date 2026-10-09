@@ -3,7 +3,7 @@
 Where memdebug is and where it is going. It is alpha software: the pieces below that are built work and are tested,
 but expect rough edges and breaking changes before 1.0. Order is a plan, not a promise.
 
-## Built (0.5)
+## Built (0.6)
 
 * Tamper-evident ledger (hash chain) with `verify`, snapshots whose content is chained in, and compare.
 * **Witness:** a second copy of the ledger's head kept elsewhere, so a rewritten or cut-short ledger is noticed.
@@ -19,6 +19,7 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 * **Rollback for plain folders** (`memdebug rollback store`, and `memdebug snapshot store` to save a known-good copy first), rebuilt from the snapshot's
   text with backups of anything replaced, which `memdebug backups list` and `clean` show and tidy; Open WebUI and Mem0 still cannot be rolled back.
 * **Published on PyPI** as `memdebug` (`pip install memdebug`), released by a tag-triggered workflow that needs an approval click.
+* **Stand-alone programs** for Windows, Linux and macOS (no Python needed), attached to each GitHub release with checksums and a build attestation; not signed.
 * **A first slice of provenance for Open WebUI:** its own `created_by` label and a chat-timing comparison, as evidence only.
 * **Who wrote it, for Claude Code:** `check` and `watch` name the logged Claude Code session whose Write or Edit call changed a flagged note, from its
   session logs, as evidence and never proof. Changes made by shell commands cannot be matched, so they are only counted.
