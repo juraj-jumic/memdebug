@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .. import longpath
 from ..errors import AdapterError
 from ..models import Memory, MemoryEvent
 from ..textsafe import safe_text
@@ -37,12 +38,12 @@ class FolderAdapter(MarkdownGitAdapter):
         clock: Callable[[], datetime] | None = None,
     ):
         try:
-            self._root = Path(root).resolve(strict=True)
+            self._root = longpath.resolve(root, strict=True)
         except OSError as exc:
             raise AdapterError(f"cannot access the folder: {exc.strerror}") from exc
-        if not self._root.is_dir():
+        if not longpath.isdir(self._root):
             raise AdapterError("the path is not a folder")
-        if (self._root / ".git").exists():
+        if longpath.exists(self._root / ".git"):
             raise AdapterError("this folder is a git repository: use the markdown (git) store type, which also reads its history")
         if not (isinstance(max_files, int) and max_files > 0 and max_total_chars > 0):
             raise AdapterError("max_files and max_total_chars must be positive")
@@ -84,7 +85,7 @@ class FolderAdapter(MarkdownGitAdapter):
         memories: list[Memory] = []
         complete = True
         for name in self._only:
-            full = os.path.join(self._root, name)
+            full = os.path.join(longpath.fs(self._root), name)
             try:
                 os.lstat(full)
             except FileNotFoundError:

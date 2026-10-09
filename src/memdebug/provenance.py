@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import longpath
 from .adapters.markdown_git import _is_reparse_point, _valid_relpath
 
 MAX_PROJECT_FOLDERS = 1000
@@ -135,9 +136,9 @@ def _log_files(root: Path, start: datetime) -> tuple[list[tuple[str, int]], bool
     """The session logs that could hold a call made since `start`: plain files directly inside real project folders. A log last written
     before `start` cannot, so it is skipped without being opened."""
     try:
-        if not _is_plain(os.lstat(root), True):
+        if not _is_plain(longpath.lstat(root), True):
             return [], True
-        folders = sorted(os.scandir(root), key=lambda e: e.name)
+        folders = sorted(os.scandir(longpath.fs(root)), key=lambda e: e.name)  # names come back plain; the paths built from them are in the form the system takes
     except OSError:
         return [], True
     complete = len(folders) <= MAX_PROJECT_FOLDERS

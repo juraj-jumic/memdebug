@@ -48,6 +48,7 @@ Python or the operating system, side channels, and denial of service against the
 | Reading adapters changing what they inspect | Mem0's database is opened `mode=ro` plus `query_only`; the markdown adapter only runs read-only git commands. Only `adapters/restore.py` writes (see Rollback) |
 | Hostile file names (control characters, quotes, backslashes, `..`, `.git`, Windows device names like `NUL.md`, `file:stream`, trailing dots or spaces, `GIT~1`) | Rejected on both the history side and the working-tree side, on every platform, so the two cannot disagree |
 | Links and special files pointing at secrets | `lstat` check plus `O_NOFOLLOW`; symlinks, FIFOs and devices skipped; Windows junctions and reparse points detected by attribute and never followed; the listing is marked incomplete |
+| A note hidden from the monitor by Windows' path limit (a deep folder, or a long project folder name) | Windows refuses paths over 259 characters unless long paths are switched on, which is off by default, so such a note could be missed by every check and by a rollback. All note, backup and session-log access on Windows uses the extended-length form of the path, so it does not depend on that setting. Git itself has its own limits on a very deeply nested repository folder, which memdebug cannot change |
 | Console that cannot show a character | Output is escaped to the console's encoding instead of raising |
 
 ## git and hostile repositories

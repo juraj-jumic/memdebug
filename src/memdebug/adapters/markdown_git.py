@@ -36,6 +36,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import IO, Callable, Iterator
 
+from .. import longpath
 from ..errors import AdapterError
 from ..models import MAX_ID_CHARS, Memory, MemoryEvent, Op, Source
 from ..textsafe import bound_text, has_unsafe_chars, safe_text
@@ -409,10 +410,10 @@ class MarkdownGitAdapter:
         clock: Callable[[], datetime] | None = None,
     ):
         try:
-            self._root = Path(root).resolve(strict=True)
+            self._root = longpath.resolve(root, strict=True)
         except OSError as exc:
             raise AdapterError(f"cannot access repository path: {exc.strerror}") from exc
-        if not self._root.is_dir():
+        if not longpath.isdir(self._root):
             raise AdapterError("repository path is not a directory")
         if not (isinstance(max_files, int) and max_files > 0 and git_timeout > 0 and max_total_chars > 0):
             raise AdapterError("max_files, git_timeout and max_total_chars must be positive")
@@ -474,7 +475,7 @@ class MarkdownGitAdapter:
                 or any(ch in _FORBIDDEN_CHARS for ch in value) or any(_bad_component(p) for p in parts)):
             raise AdapterError("subdir must be a plain relative path inside the repository")
         target = self._root.joinpath(*parts)
-        if target.is_symlink() or not target.is_dir():
+        if longpath.islink(target) or not longpath.isdir(target):
             raise AdapterError("subdir does not exist or is not a plain directory")
         return value
 
@@ -485,7 +486,7 @@ class MarkdownGitAdapter:
             hint = " (git refuses repositories owned by another user)" if "dubious" in detail else ""
             raise AdapterError(f"not a usable git repository: {detail}{hint}")
         try:
-            top = Path(out.decode("utf-8", "replace").strip()).resolve()
+            top = longpath.resolve(out.decode("utf-8", "replace").strip())
         except OSError as exc:
             raise AdapterError("cannot resolve the repository top") from exc
         if top != self._root:
@@ -639,9 +640,10 @@ class MarkdownGitAdapter:
             warnings.add(f"cannot read a folder: {exc.strerror}")
 
         top = self._root.joinpath(*self._subdir.split("/")) if self._subdir else self._root
+        fsroot = longpath.fs(self._root)  # every path below is in the form the operating system takes, so none is too long for it
         count = 0
         stop = False
-        for dirpath, dirnames, filenames in os.walk(top, topdown=True, followlinks=False, onerror=walk_error):
+        for dirpath, dirnames, filenames in os.walk(longpath.fs(top), topdown=True, followlinks=False, onerror=walk_error):
             kept = []
             for d in sorted(dirnames):
                 if d == ".git":  # the real git folder; look-alikes are reported below
@@ -662,7 +664,7 @@ class MarkdownGitAdapter:
                     continue
                 kept.append(d)
             dirnames[:] = kept
-            depth = len(Path(dirpath).relative_to(self._root).parts)
+            depth = len(Path(dirpath).relative_to(fsroot).parts)
             if depth >= MAX_WALK_DEPTH:
                 if dirnames:
                     state["complete"] = False
@@ -672,7 +674,7 @@ class MarkdownGitAdapter:
                 if not name.lower().endswith(self._suffixes):
                     continue
                 full = os.path.join(dirpath, name)
-                relative = Path(full).relative_to(self._root).as_posix()
+                relative = Path(full).relative_to(fsroot).as_posix()
                 relpath = _valid_relpath(relative, self._suffixes)
                 if relpath is None:
                     state["complete"] = False

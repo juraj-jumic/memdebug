@@ -3,6 +3,15 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Fixed
+- **Windows paths longer than 259 characters.** Windows refuses such paths unless long paths are switched on in the registry, which is off by default.
+  Before, a note beyond the limit was left out of the baseline and of every check (`check` said "quiet, nothing new", exit code 0, with only a trailing
+  warning), a rollback said "Nothing to restore" while that note stayed tampered, a rollback whose backup path was beyond the limit failed, and a store
+  folder beyond the limit failed with "unexpected error". memdebug now hands Windows the extended-length form of every note, backup and session-log
+  path, so none of this depends on that setting. A git repository in a very deeply nested folder can still hit git's own limits.
+
 ## [0.4.0] - 2026-10-09
 
 ### Added

@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 import memdebug.agents as ag
 import memdebug.cli as cli
 import memdebug.stores as st
+from memdebug import longpath
 from memdebug.adapters.folder import FolderAdapter
 from memdebug.errors import AdapterError
 
@@ -207,7 +208,7 @@ def test_credentials_beside_the_memory_are_never_opened_by_setup_or_check(tmp_pa
     db = tmp_path / "d" / "l.db"
     run(db, "setup", "--yes")
     run(db, "check", "--settle", "0")
-    touched = [p for p in opened if p.startswith(str(home))]
+    touched = [p for p in opened if longpath.plain(p).startswith(str(home))]  # Windows paths may carry the extended-length prefix
     assert touched and not [p for p in touched if os.path.basename(p) in SECRETS or os.path.basename(p) == "OTHER.md"]
 
 

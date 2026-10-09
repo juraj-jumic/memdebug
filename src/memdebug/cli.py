@@ -9,6 +9,7 @@ from typing import Optional, cast
 
 import typer
 
+from . import longpath
 from .adapters.folder import FolderAdapter
 from .adapters.folder_restore import FolderRestorer
 from .adapters.markdown_git import MarkdownGitAdapter
@@ -678,7 +679,7 @@ def _copies_dir(db: Optional[Path]) -> Path:
 def _register(registry, path: Path, *, name: Optional[str], kind: Optional[str], user_id: Optional[str], agent_id: Optional[str],
               run_id: Optional[str], subdir: Optional[str], docker: Optional[str] = None, files: Optional[str] = None) -> StoreConfig:
     """Check that a store can be opened, then add it to the registry (not yet saved)."""
-    resolved = path.expanduser().resolve()
+    resolved = longpath.resolve(path.expanduser())
     chosen_kind = kind or detect_kind(resolved)
     if chosen_kind not in KINDS:
         raise MemdebugError("the type must be one of: " + ", ".join(KINDS))

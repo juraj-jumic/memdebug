@@ -15,6 +15,7 @@ import secrets
 import stat
 from typing import Sequence
 
+from .. import longpath
 from ..errors import RestoreError
 from ..textsafe import safe_text
 from .markdown_git import MAX_FILE_BYTES, _is_reparse_point, _text_from_bytes
@@ -35,7 +36,7 @@ class FileOps:
     def _inspect(self, relpath: str) -> tuple[str, bytes | None]:
         """Read a working-tree file without following links: ("ok", bytes), ("missing", None), ("large", None) or
         ("unsafe", None)."""
-        current = str(self._root)
+        current = longpath.fs(self._root)
         parts = relpath.split("/")
         for part in parts[:-1]:
             current = os.path.join(current, part)
@@ -74,7 +75,7 @@ class FileOps:
         return ("large", None) if len(data) > MAX_FILE_BYTES else ("ok", data)
 
     def _check_target(self, rel: str, must_exist: bool = False) -> None:
-        current = str(self._root)
+        current = longpath.fs(self._root)
         parts = rel.split("/")
         for part in parts[:-1]:
             current = os.path.join(current, part)
@@ -108,7 +109,7 @@ class FileOps:
         """Replace or create a file through a temporary file and an atomic rename. Returns the folders it created."""
         created: list[str] = []
         try:
-            current = str(self._root)
+            current = longpath.fs(self._root)
             parts = rel.split("/")
             for part in parts[:-1]:
                 current = os.path.join(current, part)
@@ -156,7 +157,7 @@ class FileOps:
 
     def _remove_file(self, rel: str) -> None:
         self._check_target(rel, must_exist=True)
-        os.unlink(os.path.join(str(self._root), *rel.split("/")))
+        os.unlink(os.path.join(longpath.fs(self._root), *rel.split("/")))
 
     def _verify_files(self, items: Sequence) -> None:
         """Every item must now be on disk exactly as planned."""
@@ -174,7 +175,7 @@ class FileOps:
         for path, old in reversed(journal):
             try:
                 if old is None:
-                    full = os.path.join(str(self._root), *path.split("/"))
+                    full = os.path.join(longpath.fs(self._root), *path.split("/"))
                     if os.path.lexists(full):
                         os.unlink(full)
                 else:

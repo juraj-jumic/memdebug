@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+from .. import longpath
 from ..errors import RestoreError
 from ..models import Snapshot
 from ..textsafe import safe_text
@@ -54,8 +55,8 @@ class FolderRestorer(FileOps):
 
     def _backup_problem(self) -> str | None:
         """memdebug's backups must never sit inside the notes (they would be read as memories) or contain them."""
-        notes = os.path.normcase(os.path.realpath(self._root))
-        backups = os.path.normcase(os.path.realpath(self._backup_root))
+        notes = os.path.normcase(longpath.realpath(self._root))
+        backups = os.path.normcase(longpath.realpath(self._backup_root))
         if backups == notes or backups.startswith(notes + os.sep):
             return "memdebug's backup folder is inside the folder being restored; give the ledger a location outside it (--db)"
         if notes.startswith(backups + os.sep):
@@ -225,19 +226,19 @@ class FolderRestorer(FileOps):
         """Create a folder and any missing parents, readable by this user only (on systems that have such modes)."""
         missing: list[Path] = []
         current = path
-        while not current.exists():
+        while not longpath.exists(current):
             missing.append(current)
             if current.parent == current:
                 break
             current = current.parent
         for folder in reversed(missing):
-            os.mkdir(folder, 0o700)
+            os.mkdir(longpath.fs(folder), 0o700)
             if os.name == "posix":
                 os.chmod(folder, 0o700)
 
     @staticmethod
     def _write_private(path: Path, data: bytes) -> None:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_BINARY | _O_NOFOLLOW, 0o600)
+        fd = os.open(longpath.fs(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_BINARY | _O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
             handle.flush()
@@ -261,14 +262,14 @@ class FolderRestorer(FileOps):
                 self._private_dirs(destination.parent)
                 self._write_private(destination, data)
                 digest = hashlib.sha256(data).hexdigest()
-                if hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
+                if hashlib.sha256(Path(longpath.fs(destination)).read_bytes()).hexdigest() != digest:
                     raise RestoreError(f"the copy of {safe_text(item.path, 60)} did not match the original")
                 files.append({"path": item.path, "action": item.action, "bytes": len(data), "sha256": digest})
             manifest = {"format": 1, "created": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "store": plan.store, "snapshot": plan.snapshot_id,
                         "plan": plan.plan_id, "files": files}
             self._write_private(target / "manifest.json", json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8"))
         except BaseException as failure:
-            shutil.rmtree(target, ignore_errors=True)
+            shutil.rmtree(longpath.fs(target), ignore_errors=True)
             if isinstance(failure, (KeyboardInterrupt, SystemExit)):
                 raise
             raise RestoreError(f"the backup could not be written ({safe_text(failure, 120)}), so nothing was changed.") from failure

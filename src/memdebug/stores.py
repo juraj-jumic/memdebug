@@ -16,6 +16,7 @@ from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from . import longpath
 from .adapters.base import MemoryAdapter
 from .adapters.folder import FolderAdapter
 from .adapters.markdown_git import MarkdownGitAdapter, _is_reparse_point, _valid_relpath
@@ -192,11 +193,11 @@ def open_store(cfg: StoreConfig, *, refresh: bool = True) -> OpenedStore:
 def detect_kind(path: Path) -> str:
     """markdown, folder, openwebui or mem0, from what the path is. Reads structure only, never contents."""
     try:
-        info = os.stat(path)
+        info = longpath.stat(path)
     except OSError as exc:
         raise SettingsError(f"cannot find that path ({exc.strerror})") from exc
     if stat.S_ISDIR(info.st_mode):
-        return "markdown" if (path / ".git").exists() else "folder"
+        return "markdown" if longpath.exists(path / ".git") else "folder"
     if not stat.S_ISREG(info.st_mode):
         raise SettingsError("that is neither a folder nor a file")
     try:
@@ -235,18 +236,18 @@ def discover(home: Path | None = None) -> list[Candidate]:
     found: list[Candidate] = []
     taken: set[str] = set()
     try:
-        entries = sorted(os.scandir(base), key=lambda e: e.name)[:300]
+        entries = sorted(os.scandir(longpath.fs(base)), key=lambda e: e.name)[:300]
     except OSError:
         return []
     for entry in entries:
         try:
             if not entry.is_dir(follow_symlinks=False) or has_unsafe_chars(entry.name):
                 continue
-            memory = Path(entry.path) / "memory"
-            info = os.lstat(memory)
+            memory = base / entry.name / "memory"  # the ordinary form: it is what gets stored and shown
+            info = longpath.lstat(memory)
             if stat.S_ISLNK(info.st_mode) or _is_reparse_point(info) or not stat.S_ISDIR(info.st_mode):
                 continue
-            names = os.listdir(memory)[:2000]
+            names = longpath.listdir(memory)[:2000]
         except OSError:
             continue
         if not any(n.lower().endswith(".md") for n in names):

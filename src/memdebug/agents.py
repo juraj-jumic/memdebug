@@ -10,11 +10,11 @@ their memory if they were.
 """
 from __future__ import annotations
 
-import os
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import longpath
 from .adapters.markdown_git import _is_reparse_point
 from .stores import Candidate, discover
 
@@ -71,7 +71,7 @@ class FoundAgent:
 
 def _real_folder(path: Path) -> bool:
     try:
-        info = os.lstat(path)
+        info = longpath.lstat(path)
     except OSError:
         return False
     return stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode) and not _is_reparse_point(info)
@@ -79,14 +79,14 @@ def _real_folder(path: Path) -> bool:
 
 def _has_markdown(path: Path) -> bool:
     try:
-        return any(name.lower().endswith(".md") for name in os.listdir(path)[:2000])
+        return any(name.lower().endswith(".md") for name in longpath.listdir(path)[:2000])
     except OSError:
         return False
 
 
 def _is_plain_file(path: Path) -> bool:
     try:
-        info = os.lstat(path)
+        info = longpath.lstat(path)
     except OSError:
         return False
     return stat.S_ISREG(info.st_mode) and not _is_reparse_point(info)

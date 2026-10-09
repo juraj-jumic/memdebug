@@ -174,6 +174,8 @@ it cannot prove (for example symlinks need Developer Mode).
 - git is found through PATH entries that are absolute paths only; the current folder is never searched.
 - Names that mean something special on Windows (`NUL.md`, `con.md`, `file:stream.md`, trailing dots or spaces, `GIT~1`, `.GIT`)
   are rejected on every platform, so the history and the files always agree.
+- Paths longer than 259 characters work without changing any Windows setting: memdebug hands Windows the extended-length form of every note, backup and
+  log path. A git repository in a very deeply nested folder can still hit git's own limits.
 - Directory junctions and symlinks are never followed, including by rollback. A hung git is stopped with `taskkill /T`.
 - Ledger file permissions are not enforced by this tool on Windows; the default location is private to your user account.
 - If git reports "dubious ownership" for a repository on another drive, fix the ownership; this tool deliberately ignores your
