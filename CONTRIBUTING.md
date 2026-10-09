@@ -51,6 +51,28 @@ You need Python 3.10+ and git 2.31+. The suite starts many git processes, so it 
    writes turn `\n` into `\r\n` (write bytes when exact content matters).
 7. **Say what a feature does not do.** Add its limits to `docs/threat-model.md`.
 
+## Code style
+
+The code follows the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html). CI checks the parts a tool can check:
+`ruff` for docstrings (Google convention), naming, a type annotation on every function, and no blind `except Exception` without a stated reason;
+`mypy` for the types themselves (every function must be annotated). The rest is for review. In practice:
+
+* Every public module, class, function and method has a docstring: a one-line summary, then `Args:`, `Returns:`, `Raises:` and `Attributes:`
+  sections only where they say something the signature and the annotations do not. Describe behaviour and side effects, not implementation.
+* Types are written as `X | None`; exceptions end in `Error`; `Any` is fine where a type should not be expressed.
+* `except Exception` is only for an isolation point (one store, one request or one undo step failing without stopping the rest), with a
+  `# noqa: BLE001 - reason` that says so. Everything else catches what it expects.
+* Tests need no docstrings or annotations.
+
+Where the project deliberately differs from the guide, because changing it would add churn without making the code safer or clearer:
+
+* Lines may be up to 140 characters (the guide says 80). There is no auto-formatter.
+* The package uses relative imports and `from module import name` (the guide asks for absolute imports of modules only).
+* A few helpers are `@staticmethod`s on the class they belong to (the guide prefers module-level functions).
+* Some functions are longer than the guide's 40-line hint, mostly the rollback planners and the viewer's page builders, where splitting
+  would scatter a security-relevant sequence across helpers.
+* A comprehension may have an `if` when it fits on one line.
+
 ## Writing tests
 
 * Use made-up data only. Every test already gets an empty home folder and no Docker (`isolated_home` and `no_real_docker` in

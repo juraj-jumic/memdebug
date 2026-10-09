@@ -48,12 +48,24 @@ target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-# Real mistakes and unused code, plus sorted imports. Deliberately modest: the gate must stay green and meaningful.
-select = ["E4", "E7", "E9", "F", "I", "B"]
-ignore = ["B008"]  # typer declares options as default arguments
+# Real mistakes and unused code, sorted imports, and the parts of the Google Python Style Guide
+# (https://google.github.io/styleguide/pyguide.html) that a linter can check: docstrings (D, Google convention), naming (N), a type
+# annotation on every function (ANN), and no blind "except Exception" without a stated reason (BLE). CONTRIBUTING.md lists where the
+# project deliberately differs from the guide.
+select = ["E4", "E7", "E9", "F", "I", "B", "D", "N", "ANN", "BLE"]
+ignore = [
+    "B008",    # typer declares options as default arguments
+    "D107",    # an __init__ is documented by its class docstring
+    "ANN204",  # special methods such as __init__ need no return annotation (guide 3.19.1)
+    "ANN401",  # the guide allows Any where a type should not be expressed
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E702", "E731"]  # compact one-line cleanups in test helpers are fine
+# Compact one-line cleanups in test helpers are fine, and the guide asks for neither docstrings nor annotations on tests.
+"tests/*" = ["E702", "E731", "D", "ANN", "BLE"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["memdebug"]
@@ -65,3 +77,4 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 check_untyped_defs = true
+disallow_untyped_defs = true  # every function is annotated (guide 2.21); ruff's ANN rules say the same, mypy also checks the types

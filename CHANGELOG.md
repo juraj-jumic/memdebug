@@ -15,6 +15,11 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   folder beyond the limit failed with "unexpected error". memdebug now hands Windows the extended-length form of every note, backup and session-log
   path, so none of this depends on that setting. A git repository in a very deeply nested folder can still hit git's own limits.
 
+### Changed
+- The code now follows the Google Python Style Guide, and CI enforces the parts a tool can check: every public module, class, function and method has a
+  docstring, every function has type annotations (`mypy` now requires them), exceptions end in `Error`, and a broad `except Exception` needs a stated
+  reason. No behaviour changed. CONTRIBUTING.md has a "Code style" section that also lists where the project deliberately differs from the guide.
+
 ## [0.4.0] - 2026-10-09
 
 ### Added
