@@ -318,5 +318,7 @@ def test_clean_never_touches_the_ledger_or_a_store(db, tmp_path):
 
 
 def test_the_command_is_registered_and_its_help_says_nothing_is_removed_without_apply():
-    result = runner.invoke(cli.app, ["backups", "--help"])
-    assert result.exit_code == 0 and "without --apply" in " ".join(result.output.split())
+    # Not the rendered --help: CI forces colour and box drawing into it, which would make the text depend on the terminal.
+    assert "backups" in [group.name for group in cli.app.registered_groups]
+    assert "without --apply" in cli.backups_app.info.help
+    assert runner.invoke(cli.app, ["backups", "--help"]).exit_code == 0
