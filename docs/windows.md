@@ -12,5 +12,7 @@ it cannot prove (for example symlinks need Developer Mode).
   log path. A git repository in a very deeply nested folder can still hit git's own limits.
 - Directory junctions and symlinks are never followed, including by rollback. A hung git is stopped with `taskkill /T`.
 - Ledger file permissions are not enforced by this tool on Windows; the default location is private to your user account.
+- The stand-alone `memdebug-windows-x64.exe` from the GitHub release is not signed, so SmartScreen may say "Windows protected your PC" the first time:
+  choose "More info", then "Run anyway", once you have checked the file against `SHA256SUMS` (`Get-FileHash .\memdebug-windows-x64.exe`).
 - If git reports "dubious ownership" for a repository on another drive, fix the ownership; this tool deliberately ignores your
   global `safe.directory` setting.

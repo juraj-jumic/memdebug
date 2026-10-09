@@ -55,7 +55,11 @@ def test_the_workflows_ask_for_the_least_they_need():
     ci, release = code(".github/workflows/ci.yml"), code(".github/workflows/release.yml")
     assert re.search(r"^permissions:\s*\n\s+contents: read", ci, re.M) and re.search(r"^permissions:\s*\n\s+contents: read", release, re.M)
     assert "id-token" not in ci
-    assert release.count("id-token: write") == 1 and release.index("id-token: write") > release.index("  publish:")  # only the publish job may mint one
+    # Only two jobs may mint an identity token: publish (to PyPI) and github-release (for the attestation of the stand-alone programs), both after the build.
+    assert release.count("id-token: write") == 2 and release.index("id-token: write") > release.index("  publish:")
+    # Only github-release may write to the repository (it creates the release), and nothing may do so before publish has succeeded.
+    assert release.count("contents: write") == 1 and release.index("contents: write") > release.index("  github-release:")
+    assert release.count("attestations: write") == 1 and release.index("attestations: write") > release.index("  github-release:")
     assert re.search(r'tags: \["v\*"\]', release) and "pull_request" not in release  # a pull request can never publish
     assert "environment: pypi" in release and "password" not in release.lower() and "secrets." not in release
 
@@ -64,10 +68,14 @@ def test_the_workflows_ask_for_the_least_they_need():
 def test_the_workflows_are_valid_yaml_with_the_expected_jobs():
     yaml = pytest.importorskip("yaml")
     ci = yaml.safe_load(text(".github/workflows/ci.yml"))
-    assert {"test", "lint", "package"} <= set(ci["jobs"])
+    assert {"test", "lint", "package", "standalone"} <= set(ci["jobs"])
     release = yaml.safe_load(text(".github/workflows/release.yml"))
-    assert set(release["jobs"]) == {"build", "verify", "publish"} and release["jobs"]["verify"]["needs"] == "build"
-    assert set(release["jobs"]["publish"]["needs"]) == {"build", "verify"}  # nothing is published unless the hand-over was re-checked
+    jobs = release["jobs"]
+    assert set(jobs) == {"build", "verify", "standalone", "publish", "github-release"} and jobs["verify"]["needs"] == "build"
+    assert set(jobs["publish"]["needs"]) == {"build", "verify", "standalone"}  # nothing is published unless the hand-over was re-checked and every stand-alone build passed
+    assert set(jobs["github-release"]["needs"]) == {"publish", "standalone"}  # the GitHub release comes only after PyPI has the release
+    assert jobs["publish"]["if"] == jobs["github-release"]["if"] == "github.ref_type == 'tag'"  # a manual dry run publishes nothing and releases nothing
+    assert jobs["publish"]["environment"] == "pypi" and "environment" not in jobs["github-release"]
     assert yaml.safe_load(text(".github/dependabot.yml"))["version"] == 2
 
 
@@ -136,7 +144,7 @@ def test_dependabot_groups_its_updates_so_paired_actions_move_together():
 def test_the_upload_and_download_actions_move_together_and_only_trusted_owners_are_used():
     release = text(".github/workflows/release.yml")
     downloads = set(re.findall(r"actions/download-artifact@(\S+)", release))
-    assert len(downloads) == 1 and release.count("actions/download-artifact@") == 2  # verify and publish use the very same version
+    assert len(downloads) == 1 and release.count("actions/download-artifact@") == 3  # verify, publish and github-release use the very same version
     for name in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
         for owner, action, ref in re.findall(r"uses:\s*([\w.-]+)/([\w./-]+)@(\S+)", text(name)):
             assert owner in {"actions", "pypa"}, f"{name} uses an action from {owner}"

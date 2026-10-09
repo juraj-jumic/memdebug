@@ -42,3 +42,4 @@ memdebug-report*
 .idea/
 .DS_Store
 Thumbs.db
+*.spec

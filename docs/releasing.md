@@ -37,6 +37,30 @@ proposes new versions of the upload and download actions) so a problem shows up 
 4. Approve the `pypi` environment if you required that. After a minute, in a clean virtual environment (not your working one), check the real
    install: `pip install memdebug==<version>`, then `memdebug --version` and `memdebug demo`. Do this on Windows as well as Linux or macOS.
 
+## The stand-alone programs
+
+Besides the PyPI package, each release carries a program for Windows (x64), Linux (x64) and macOS (arm64) that needs no Python. They are built with
+PyInstaller from `packaging/entry.py` by the `standalone` job of `release.yml` (and, to notice breakage early, of `ci.yml` on every push) and smoke-tested
+by `packaging/check_standalone.py`, which fails unless `--version`, `demo` and every protection `selftest` can prove here are right. A build that does not
+pass stops the release before PyPI sees anything (`publish` needs `standalone`).
+
+After PyPI has the release, the `github-release` job (only for a version tag, and the only job that can write to the repository) attaches the three
+programs, a `SHA256SUMS` file and a build attestation to a GitHub release whose notes are that version's changelog section
+(`packaging/release_notes.py`; it fails if there is none, so write the changelog before tagging). A manual dry run builds and tests the programs and stops.
+
+What to know:
+
+* The programs are **not signed**: Windows SmartScreen and macOS Gatekeeper may warn, and an antivirus may object to a packed program. Signing needs a
+  certificate, which this project does not have.
+* A one-file program unpacks itself on every start (about one second here) and is about 19 MB.
+* Mem0 is not in them (it needs `mem0ai`, so use the PyPI install for that). git 2.31 or newer is still needed on the computer.
+* The Linux program is built on the runner's glibc and may not start on an older distribution; the macOS one is for Apple silicon only.
+* In a stand-alone build `selftest` starts `memdebug selftest-helper ...` (a hidden command with a fixed set of jobs, not a way to run code) where a source
+  install starts the Python it runs under, because there is no Python to start.
+* Try it yourself: Actions, **release**, **Run workflow**, then download the `standalone-*` artifacts. Run `memdebug selftest` from the one for your system.
+* If the `github-release` job fails after PyPI succeeded, the PyPI release stands; rerun the failed job from the Actions page. A GitHub release can be
+  edited or deleted (unlike a PyPI version).
+
 ## If something goes wrong
 
 * A published version cannot be changed or reused. Fix forward with a new version; you can "yank" a bad one on PyPI.

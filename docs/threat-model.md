@@ -170,6 +170,12 @@ simulation, but real junctions are only tested on Windows runs of the suite.
 
 Read these. They are why this is alpha software.
 
+* **The stand-alone programs are not signed.** The GitHub release holds a program for Windows, Linux and macOS that needs no Python, built by the release
+  workflow from the tagged source (PyInstaller, one file) after it passed a smoke test on that operating system. Each file has a checksum in `SHA256SUMS` and a
+  build attestation, so you can check that it came from this repository's workflow (`gh attestation verify FILE --repo juraj-jumic/memdebug`). They carry no
+  code-signing certificate, so Windows SmartScreen and macOS Gatekeeper may warn, and an antivirus may take a packed program for something else. Someone who
+  can replace both the file and its checksum on your side of the download can still hand you a different program; the attestation is what ties a file to the
+  workflow. PyPI is the other route (`pip install memdebug`) and has its own attestations.
 * **No encryption at rest.** The ledger holds memory text, including deleted memories, and entries cannot be erased one
   by one without breaking the chain. Snapshots are as sensitive as the ledger. On Windows the tool does not enforce file
   permissions; the default ledger folder is private to your account.

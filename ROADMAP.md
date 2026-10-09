@@ -46,8 +46,8 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 4. **Releases.** 0.2.0 was published to GitHub and PyPI on 2026-10-07 through the tag-triggered workflow (PyPI trusted publishing, with a
    required approval and provenance attestations). The install from PyPI has been checked in a clean Linux environment and on Windows 11 (pipx, Python 3.14); macOS
    still needs the same check. Still to do: signed release notes and a smoother route for people without Python (item 5).
-5. **Better setup for non-advanced users:** an installer with no Python knowledge needed, and a way to keep `watch` running
-   without a terminal.
+5. **Better setup for non-advanced users:** stand-alone programs (no Python) are built for Windows, Linux and macOS and attached to each release (not signed). Still to do:
+   a signed Windows installer, and a way to keep `watch` running without a terminal.
 6. **Viewer:** filter by store, show hints in the overview, a status page that matches `memdebug status`.
 
 ## Later, maybe

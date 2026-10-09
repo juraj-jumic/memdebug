@@ -49,8 +49,34 @@ jobs:
           python -m venv /tmp/clean
           /tmp/clean/bin/pip install dist/*.whl
           /tmp/clean/bin/memdebug --version
+  standalone:
+    # Stand-alone programs (no Python needed), one per operating system, built and smoke-tested the way a person would run them. In a manual dry run
+    # they are built and tested and then dropped; for a version tag they are attached to the GitHub release, but only after publish has succeeded.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-latest, asset: memdebug-windows-x64.exe, built: memdebug.exe}
+          - {os: ubuntu-latest, asset: memdebug-linux-x64, built: memdebug}
+          - {os: macos-latest, asset: memdebug-macos-arm64, built: memdebug}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install . pyinstaller==6.22.3
+      - run: python -m PyInstaller --onefile --name memdebug --noconfirm packaging/entry.py
+      - run: python packaging/check_standalone.py dist/${{ matrix.built }}
+      - name: Name the file for the release
+        shell: bash
+        run: mv "dist/${{ matrix.built }}" "dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: standalone-${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
   publish:
-    needs: [build, verify]
+    needs: [build, verify, standalone]   # a stand-alone build that does not pass its smoke test stops the release before anything is public
     if: github.ref_type == 'tag'   # a manual dry run stops after build and verify
     runs-on: ubuntu-latest
     environment: pypi
@@ -62,3 +88,34 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+  github-release:
+    # After PyPI has the release (which needed the maintainer's approval), attach the stand-alone programs to a GitHub release with their checksums
+    # and a build attestation. This is the only job that writes to the repository (a release), and it runs only for a version tag.
+    needs: [publish, standalone]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # to create the release
+      id-token: write        # for the attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: standalone-*
+          merge-multiple: true
+          path: assets/
+      - name: Checksums
+        run: |
+          cd assets
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: assets/*
+      - name: Release notes from the changelog
+        run: python packaging/release_notes.py "$GITHUB_REF_NAME" > notes.md
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" assets/* --verify-tag --title "memdebug ${GITHUB_REF_NAME#v}" --notes-file notes.md

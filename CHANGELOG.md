@@ -3,6 +3,19 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Added
+- **Stand-alone programs.** The release workflow now builds `memdebug` for Windows (x64), Linux (x64) and macOS (arm64) as a single file that needs no Python
+  (PyInstaller), smoke-tests each on its own operating system, and attaches them to a GitHub release with a `SHA256SUMS` file and a build attestation. CI
+  builds and tests them on every push. They are not code-signed (SmartScreen or Gatekeeper may warn), do not include Mem0, and still need git. See
+  docs/releasing.md.
+
+### Fixed
+- `memdebug selftest` in a build without its own Python: the tripwire checks could not start their tripwire and said SKIP, and "a hung process tree is killed"
+  passed without testing anything (it started a program that exits at once). A stand-alone build now starts a hidden `selftest-helper` command with a fixed set
+  of jobs instead. A source install is unchanged.
+
 ## [0.5.0] - 2026-10-09
 
 ### Added
