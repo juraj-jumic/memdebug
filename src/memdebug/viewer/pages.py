@@ -95,7 +95,8 @@ def earlier_snapshot(snapshots, backend: str, scope: dict, seq: int) -> Snapshot
 def rollback_command(backend: str, scope: dict, snapshot_id: str) -> str | None:
     """The command that puts a store back to a snapshot, or None when it cannot be given safely. The store's name comes from the ledger, which
     anyone could edit, so it is only put into a command when it passes the same strict rule as a watched store's name: nothing a shell treats
-    specially, so pasting the command can never do anything else."""
+    specially, so pasting the command can never do anything else.
+    """
     name = scope.get("store")
     if backend not in PUT_BACK_KINDS or not isinstance(name, str) or not valid_name(name):
         return None
@@ -104,7 +105,8 @@ def rollback_command(backend: str, scope: dict, snapshot_id: str) -> str | None:
 
 def putback(backend: str, scope: dict, snapshot_id: str, *, heading: str = "Put it back", lead: str | None = None) -> Markup:
     """How to put a store back to a snapshot. The viewer itself never changes anything: this is text to paste into a terminal, where memdebug
-    shows what would change first and asks before doing it."""
+    shows what would change first and asks before doing it.
+    """
     if backend not in PUT_BACK_KINDS:
         return el("section", el("h2", heading), el(
             "p", "memdebug only ever reads this kind of store, so it cannot put it back. Open Compare to see exactly what changed, and "
@@ -186,7 +188,8 @@ _BREAKS = re.compile(r"[ \t\r\n]+")
 
 def _excerpt(event: MemoryEvent, limit: int = 260) -> Markup:
     """The start of a memory on one line. Only spaces, tabs and line breaks are folded together; any other
-    control character stays visible, as everywhere else in the viewer."""
+    control character stays visible, as everywhere else in the viewer.
+    """
     return inline(_BREAKS.sub(" ", describe_event(event)).strip(), limit)
 
 
@@ -339,7 +342,8 @@ def overview(ledger: Ledger, ctx: Context) -> Page:
 def agents_page(ctx: Context, found: list[FoundAgent]) -> Page:
     """The known agents that appear to be installed, and what memdebug could watch for each. Presence is only the existence of a folder: no
     file is opened. Folder names come from the disk, so they are shown as escaped text and never put into a command; the one command given
-    is fixed text."""
+    is fixed text.
+    """
     parts: list[Markup] = [
         el("h1", "Agents on this computer"),
         el("p", "memdebug checked whether the folders these agents are known to use exist. It opened no file.", class_="sub"),

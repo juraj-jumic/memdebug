@@ -54,7 +54,8 @@ class SourceKind(str, Enum):
 class Source(BaseModel):
     """Where a memory write came from. Session fields are filled by a session-source adapter
     (milestone 7). actor_id and role are whatever the backend recorded; they are not trusted
-    to decide the source kind."""
+    to decide the source kind.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

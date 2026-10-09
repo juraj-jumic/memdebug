@@ -26,7 +26,8 @@ _UNC_PREFIX = "\\\\?\\UNC\\"
 def fs(path: str | os.PathLike[str], *, _windows: bool | None = None) -> str:
     """The form of a path to hand to the operating system: on Windows its extended-length form, elsewhere the path itself.
 
-    `_windows` exists so the rules can be tested on any platform; it is never set by product code."""
+    `_windows` exists so the rules can be tested on any platform; it is never set by product code.
+    """
     text = os.fspath(path)
     if isinstance(text, bytes):
         text = os.fsdecode(text)

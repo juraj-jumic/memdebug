@@ -101,7 +101,8 @@ def check_git_ignores_global_config() -> str:
 
 def _config_trap_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
     """A repository whose config names the tripwire for every setting that makes git run a program when it shows a diff, pages output, checks
-    the file system or opens an editor. One marker, `<prefix>-config`. (The tripwire and its helpers are defined further down, with the rollback check.)"""
+    the file system or opens an editor. One marker, `<prefix>-config`. (The tripwire and its helpers are defined further down, with the rollback check.)
+    """
     root.mkdir(parents=True)
     repo = root / "repo"
     repo.mkdir()
@@ -485,7 +486,8 @@ def _write_tripwire(path: Path) -> Path:
 
 def _hostile_repo(git: str, root: Path, trap: Path, prefix: str, markers_dir: Path | None = None) -> _Hostile:
     """A repository whose own config names programs for git to run (a filter, an external diff, hooks, an fsmonitor), each one the tripwire,
-    recording into a marker file of its own. `prefix` names the markers, so two repositories made with different prefixes never share one."""
+    recording into a marker file of its own. `prefix` names the markers, so two repositories made with different prefixes never share one.
+    """
     root.mkdir(parents=True)
     repo = root / "repo"
     repo.mkdir()
@@ -595,7 +597,8 @@ def check_rollback_is_safe() -> str:
 
 def check_folder_rollback_is_safe() -> str:
     """The plain-folder rollback, proven on this machine (no git needed): the plan writes nothing, the file comes back, what it replaced is
-    saved first byte for byte, a backup folder inside the notes is refused, and nothing outside the notes is touched."""
+    saved first byte for byte, a backup folder inside the notes is refused, and nothing outside the notes is touched.
+    """
     from .adapters.folder import FolderAdapter
     from .adapters.folder_restore import FolderRestorer
     from .errors import RestoreError

@@ -53,7 +53,7 @@ def valid_container(name: object) -> bool:
 
 
 def find_docker() -> str | None:
-    """docker on PATH, ignoring the current folder (a planted docker.exe there must never be run)."""
+    """Docker on PATH, ignoring the current folder (a planted docker.exe there must never be run)."""
     names = ["docker.exe"] if os.name == "nt" else ["docker"]
     for directory in os.environ.get("PATH", "").split(os.pathsep):
         directory = directory.strip().strip('"')

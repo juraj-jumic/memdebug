@@ -106,7 +106,8 @@ def hint_lines(result: StoreResult) -> list[str]:
 
 def _search_start(earlier: list[LedgerEntry], event: MemoryEvent) -> datetime | None:
     """When to start looking for what wrote a changed note: the last time the ledger recorded anything about that note, else about its store.
-    Both are earlier than the true last look, so the real write is never left out. None for a store seen for the first time."""
+    Both are earlier than the true last look, so the real write is never left out. None for a store seen for the first time.
+    """
     same_store = [e.event for e in earlier if e.event.backend == event.backend and e.event.scope == event.scope]
     return max((e.ts for e in same_store if e.memory_id == event.memory_id), default=None) or max((e.ts for e in same_store), default=None)
 
@@ -228,7 +229,8 @@ def store_hints(store: StoreConfig, *, limit: int = 10, budget: float = 3.0, ref
 def alarms_since_snapshot(ledger: Ledger, backend: str, scope: dict[str, str], *, limit: int = 50) -> list[tuple[str, str]]:
     """What the ledger recorded about one store since its latest snapshot that a person should look at before a NEW snapshot is
     taken and later trusted as "good": changes made outside the store's own history, and changes whose wording looks suspicious.
-    It is worked out from the ledger every time, so it does not go away once it has been shown (or looked past)."""
+    It is worked out from the ledger every time, so it does not go away once it has been shown (or looked past).
+    """
     snapshots = [info for info in ledger.list_snapshots() if info.backend == backend and info.scope == scope]
     start = max((info.ledger_seq for info in snapshots), default=0)
     found: list[tuple[str, str]] = []

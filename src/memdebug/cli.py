@@ -78,7 +78,8 @@ def echo(text: str, **kwargs) -> None:
 
 def guarded(func):
     """Turn expected errors into a clean message and exit code, and hide tracebacks that
-    could expose paths or values unless MEMDEBUG_DEBUG is set."""
+    could expose paths or values unless MEMDEBUG_DEBUG is set.
+    """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -262,7 +263,8 @@ def sync_markdown(
     settle: float = SETTLE_OPTION,
 ):
     """Markdown files in a git repository: history from git log, live memories from the working tree.
-    Uncommitted edits show up as changes made outside the history."""
+    Uncommitted edits show up as changes made outside the history.
+    """
     adapter, scope, notes = _setup_markdown(path, store, subdir)
     _run_sync(adapter, _open_ledger(db), scope, adopt_existing, settle, notes)
 
@@ -372,7 +374,8 @@ def snapshot_store(
 ):
     """Save a snapshot of a watched store as it is now, so 'memdebug rollback store' can put it back later. A snapshot is what a
     rollback treats as good, so this refuses when the ledger holds an outside-history change or suspicious wording recorded since
-    the store's last snapshot: look at that first ('memdebug serve'), then add --include-changes if it is fine."""
+    the store's last snapshot: look at that first ('memdebug serve'), then add --include-changes if it is fine.
+    """
     cfg = _watched_store(name, db)
     if label is not None and not 0 < len(label) <= 100:
         raise MemdebugError("the label must be 1 to 100 characters")
@@ -456,7 +459,8 @@ def where():
 def selftest():
     """Check on THIS machine that the safety protections work (git isolation, read-only access,
     killing a hung git, symlink and junction handling, path rules). Run it once on every new
-    platform, especially Windows."""
+    platform, especially Windows.
+    """
     from .selftest import run_all
 
     results = run_all()
@@ -525,7 +529,8 @@ def rollback_markdown(
     settle: float = SETTLE_OPTION,
 ):
     """Markdown files in a git repository: restore them to a snapshot with a new commit. History is never rewritten,
-    anything not already in git is backed up first, and the rollback can itself be undone."""
+    anything not already in git is backed up first, and the rollback can itself be undone.
+    """
     ledger = _open_ledger(db)
     snapshot = ledger.load_snapshot(to)  # fail before doing any work
     adapter, scope, _ = _setup_markdown(path, store, subdir)
@@ -594,7 +599,8 @@ def rollback_store(
 ):
     """A watched store, by name: markdown notes in git (restored with a new commit) or a plain folder of notes (changed in place,
     with whatever is replaced saved first). A folder is rebuilt from the snapshot's text, which does not keep line endings exactly.
-    Open WebUI and Mem0 keep their memory in databases that memdebug only ever reads, so they cannot be rolled back."""
+    Open WebUI and Mem0 keep their memory in databases that memdebug only ever reads, so they cannot be rolled back.
+    """
     cfg = _watched_store(name, db)
     if cfg.kind not in ("markdown", "folder"):
         raise MemdebugError(f"{KIND_NAMES[cfg.kind]} cannot be rolled back: memdebug only ever reads it. Review or change it in the app itself.")
@@ -619,7 +625,8 @@ def demo_command(
     serve_viewer: bool = typer.Option(False, "--serve", help="Afterwards, open the demo ledger in the browser viewer."),
 ):
     """Try memdebug in about a minute: a made-up agent memory, a made-up attack, and what you would see.
-    It works in a throwaway folder and never reads or changes anything of yours."""
+    It works in a throwaway folder and never reads or changes anything of yours.
+    """
     from .demo import prepare_folder, remove_folder, run_demo
 
     path, temporary = prepare_folder(folder)

@@ -54,7 +54,7 @@ class FolderRestorer(FileOps):
     # -- planning (writes nothing) ----------------------------------------------------------------------------------
 
     def _backup_problem(self) -> str | None:
-        """memdebug's backups must never sit inside the notes (they would be read as memories) or contain them."""
+        """Memdebug's backups must never sit inside the notes (they would be read as memories) or contain them."""
         notes = os.path.normcase(longpath.realpath(self._root))
         backups = os.path.normcase(longpath.realpath(self._backup_root))
         if backups == notes or backups.startswith(notes + os.sep):
@@ -246,7 +246,8 @@ class FolderRestorer(FileOps):
 
     def _save_backup(self, items: list[Item], plan: Plan, now: datetime) -> tuple[str, Path]:
         """Copy what is about to be overwritten or deleted, byte for byte, into a new private folder, and check the copies.
-        The name is recorded in the ledger in the same form the git engine uses; here it names a folder, not a git ref."""
+        The name is recorded in the ledger in the same form the git engine uses; here it names a folder, not a git ref.
+        """
         problem = self._backup_problem()
         if problem is not None:
             raise RestoreError(problem + ". Nothing was changed.")

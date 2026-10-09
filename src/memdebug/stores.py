@@ -171,7 +171,8 @@ class OpenedStore:
 
 def open_store(cfg: StoreConfig, *, refresh: bool = True) -> OpenedStore:
     """Open a store for reading. An Open WebUI store that lives in Docker gets a fresh copy of its database first
-    (`refresh=False` reads the copy that is already there, for commands that only look)."""
+    (`refresh=False` reads the copy that is already there, for commands that only look).
+    """
     if cfg.docker and refresh:
         copy_database(Docker(), cfg.docker, Path(cfg.path))
     if cfg.kind == "markdown":

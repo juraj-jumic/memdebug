@@ -81,7 +81,8 @@ def sync(
 
     acknowledge: memory id -> the exact text (or None for removed) that this tool itself just wrote. A change that
     matches is recorded as an ordinary ADD, UPDATE or DELETE by "memdebug rollback", not as a change made outside
-    the history, so a rollback does not raise a false alarm. Anything that differs is still reported."""
+    the history, so a rollback does not raise a false alarm. Anything that differs is still reported.
+    """
     last_error: LedgerConflictError | None = None
     for _ in range(3):  # another process may have written to the ledger meanwhile
         try:

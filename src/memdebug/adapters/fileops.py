@@ -35,7 +35,8 @@ class FileOps:
 
     def _inspect(self, relpath: str) -> tuple[str, bytes | None]:
         """Read a working-tree file without following links: ("ok", bytes), ("missing", None), ("large", None) or
-        ("unsafe", None)."""
+        ("unsafe", None).
+        """
         current = longpath.fs(self._root)
         parts = relpath.split("/")
         for part in parts[:-1]:

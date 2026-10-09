@@ -78,7 +78,8 @@ def diff_snapshots(old: Snapshot, new: Snapshot) -> Diff:
 
 def line_diff(before: str | None, after: str | None) -> list[str]:
     """A unified line diff of two texts, bounded in size. Lines are returned raw: the caller must
-    escape them before printing."""
+    escape them before printing.
+    """
     a = (before or "").splitlines()
     b = (after or "").splitlines()
     notes: list[str] = []

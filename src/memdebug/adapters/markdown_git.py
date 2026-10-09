@@ -59,7 +59,8 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 def find_git() -> str | None:
     """Find git on PATH, ignoring the current folder. Windows (and an empty or '.' PATH entry on
-    POSIX) would otherwise run a git.exe planted in whatever folder you happen to be in."""
+    POSIX) would otherwise run a git.exe planted in whatever folder you happen to be in.
+    """
     names = ["git.exe"] if os.name == "nt" else ["git"]
     for directory in os.environ.get("PATH", "").split(os.pathsep):
         directory = directory.strip().strip('"')
@@ -89,7 +90,8 @@ _FORBIDDEN_CHARS = set('"\\:*?<>|')  # quotes git adds, NTFS streams and drive l
 
 def _bad_component(part: str) -> bool:
     """A path component that is dangerous on some platform. Applied everywhere, so a repository
-    looks the same from every operating system."""
+    looks the same from every operating system.
+    """
     if part in ("", ".", ".."):
         return True
     folded = part.casefold()
@@ -108,7 +110,8 @@ def _is_reparse_point(info: os.stat_result) -> bool:
 def _valid_relpath(path: str, suffixes: tuple[str, ...]) -> str | None:
     """A repository-relative path that is safe to show, store and compare; else None.
     git quotes names with a double quote or backslash, so refusing them everywhere keeps the
-    history and the working-tree listing in agreement."""
+    history and the working-tree listing in agreement.
+    """
     if not path or len(path) > MAX_ID_CHARS or path[0] == "/" or has_unsafe_chars(path):
         return None
     if any(ch in _FORBIDDEN_CHARS for ch in path):

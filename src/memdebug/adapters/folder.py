@@ -76,7 +76,8 @@ class FolderAdapter(MarkdownGitAdapter):
 
     def list_memories(self, scope: dict[str, str]) -> LiveMemories:
         """With `only`, exactly those files and nothing else: the rest of the folder (often a settings folder that also holds
-        credentials) is never listed or opened."""
+        credentials) is never listed or opened.
+        """
         if self._only is None:
             return super().list_memories(scope)
         if scope != {"store": self._store}:

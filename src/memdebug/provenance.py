@@ -71,7 +71,8 @@ class Explanation:
 
 def note_paths(root: str | os.PathLike[str], memory_id: str) -> list[str]:
     """Where a note lives, spelled the ways a log might spell it (as registered, and with links resolved). The id comes from the ledger, which
-    anyone could edit, so a path is built only from an id that passes the check the store readers apply to every file name; else nothing."""
+    anyone could edit, so a path is built only from an id that passes the check the store readers apply to every file name; else nothing.
+    """
     if _valid_relpath(memory_id, (".md",)) is None:
         return []
     parts = memory_id.split("/")
@@ -85,7 +86,8 @@ def note_paths(root: str | os.PathLike[str], memory_id: str) -> list[str]:
 
 def explain_change(root: str | os.PathLike[str], memory_id: str, since: datetime | None, noticed: datetime, home: Path | None = None) -> Explanation:
     """Search the session logs for what wrote one note between `since` (the last time the ledger recorded anything about it) and `noticed`.
-    `since` is a looser bound than the true last look, so the real write is never left out; it may take in earlier ones."""
+    `since` is a looser bound than the true last look, so the real write is never left out; it may take in earlier ones.
+    """
     if since is None:
         return Explanation(reason="no earlier record of this store to say when the change happened")
     if since.tzinfo is None or noticed.tzinfo is None:
@@ -134,7 +136,8 @@ def _when(value: object) -> datetime | None:
 
 def _log_files(root: Path, start: datetime) -> tuple[list[tuple[str, int]], bool]:
     """The session logs that could hold a call made since `start`: plain files directly inside real project folders. A log last written
-    before `start` cannot, so it is skipped without being opened."""
+    before `start` cannot, so it is skipped without being opened.
+    """
     try:
         if not _is_plain(longpath.lstat(root), True):
             return [], True
@@ -211,7 +214,8 @@ def _calls(record: object):
 
 def find_writers(path: str | os.PathLike[str] | Sequence[str], start: datetime, end: datetime, home: Path | None = None) -> Provenance:
     """The logged calls that wrote `path` between `start` and `end` (both timezone-aware). `path` may be several spellings of one file. Paths
-    are compared as text and never opened."""
+    are compared as text and never opened.
+    """
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start and end must carry a time zone")
     spellings = [path] if isinstance(path, (str, os.PathLike)) else list(path)

@@ -248,7 +248,8 @@ RENDERERS = {"markdown": to_markdown, "json": to_json, "sarif": to_sarif}
 
 def write_report(path, text: str, *, force: bool = False) -> None:
     """Write a report file. It contains memory text, so it is created private; an existing file is only replaced
-    with `force`, and links and folders are refused."""
+    with `force`, and links and folders are refused.
+    """
     from pathlib import Path
 
     target = Path(path)

@@ -91,7 +91,8 @@ def snapshot_digest(
     complete: bool, label: str | None, entries: list[list],
 ) -> str:
     """Hash of everything that defines a snapshot. The ledger chain stores this value, so a
-    snapshot cannot be altered without the chain noticing."""
+    snapshot cannot be altered without the chain noticing.
+    """
     body = {
         "id": number, "backend": backend, "scope": scope, "taken_at": taken_at,
         "ledger_seq": ledger_seq, "ledger_head": ledger_head, "complete": bool(complete),
@@ -102,7 +103,8 @@ def snapshot_digest(
 
 def validate_rollback_details(value: object) -> dict:
     """The facts a rollback record may hold, checked strictly: it is written by us, but read back from a file that
-    anyone could edit, so everything is verified again when the ledger is verified."""
+    anyone could edit, so everything is verified again when the ledger is verified.
+    """
     if not isinstance(value, dict) or set(value) != {"target", "before_snapshot", "after_snapshot", "commit",
                                                      "previous_head", "backup", "file_count", "files"}:
         raise ValueError("unexpected rollback fields")
@@ -131,7 +133,8 @@ def validate_rollback_details(value: object) -> dict:
 
 def _snap_key(event: MemoryEvent) -> str | None:
     """Index key for snapshot bookkeeping events, kept apart from backend row ids so that no
-    backend can ever collide with it."""
+    backend can ever collide with it.
+    """
     if event.op not in META_OPS:
         return None
     return f"{event.op.value}:{event.memory_id.removeprefix('snapshot:')}"
@@ -196,7 +199,8 @@ class Ledger:
     @classmethod
     def open_readonly(cls, path: str | Path, *, busy_timeout: float = 5.0) -> "Ledger":
         """Open an existing ledger so that nothing can be written: the file is opened with SQLite's
-        read-only mode, never created and never upgraded. Used by the viewer."""
+        read-only mode, never created and never upgraded. Used by the viewer.
+        """
         return cls(path, readonly=True, busy_timeout=busy_timeout)
 
     def _open_readonly(self) -> None:
@@ -401,7 +405,8 @@ class Ledger:
         self, *, before_seq: int | None = None, limit: int = 50, op: str | None = None, trust: str | None = None
     ) -> list[LedgerEntry]:
         """Newest-first page of events. All filter values are checked against fixed lists and passed
-        as bound parameters."""
+        as bound parameters.
+        """
         if not (isinstance(limit, int) and 1 <= limit <= 500):
             raise LedgerError("limit must be between 1 and 500")
         if before_seq is not None and not (isinstance(before_seq, int) and before_seq >= 1):
@@ -658,7 +663,8 @@ class Ledger:
 
     def delete_snapshot(self, snapshot_id: str) -> SnapshotInfo:
         """Remove a snapshot. The deletion is chained into the ledger, so it cannot be done silently.
-        Texts no other snapshot uses are removed too."""
+        Texts no other snapshot uses are removed too.
+        """
         self._require_writable()
         number = parse_snapshot_id(snapshot_id)
         try:
@@ -679,7 +685,8 @@ class Ledger:
 
     def record_rollback(self, backend: str, scope: dict[str, str], details: dict, *, ts: datetime) -> LedgerEntry:
         """Chain a record of a completed rollback into the ledger. Only this method can write one, so a rollback
-        cannot be claimed (or hidden) by appending an ordinary event."""
+        cannot be claimed (or hidden) by appending an ordinary event.
+        """
         self._require_writable()
         if ts.tzinfo is None:
             raise LedgerError("the rollback time must carry a timezone")

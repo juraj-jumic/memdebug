@@ -1,5 +1,6 @@
 """Where the ledger lives by default: a per-user folder, not the current directory (which could be
-inside the repository being watched, or a shared folder)."""
+inside the repository being watched, or a shared folder).
+"""
 from __future__ import annotations
 
 import os

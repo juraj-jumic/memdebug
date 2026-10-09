@@ -303,7 +303,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     @staticmethod
     def _local_target(path: str, query: dict) -> str:
         """A page address rebuilt from parts that are known to be safe: a real page, and only the inputs that page
-        reads, each matching a strict pattern. Anything else is dropped, so this can never point elsewhere."""
+        reads, each matching a strict pattern. Anything else is dropped, so this can never point elsewhere.
+        """
         if not any(rx.match(path) for name, rx in _ROUTES if name not in ("theme", "style")):
             return "/"
         keep = {k: v[0] for k, v in query.items() if k in _NEXT_KEYS and v and _NEXT_VALUE.match(v[0])}

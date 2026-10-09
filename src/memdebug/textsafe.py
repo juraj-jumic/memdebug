@@ -20,7 +20,8 @@ _UNSAFE_CATEGORIES = {"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"}
 
 def bound_text(text: str, max_chars: int = MAX_TEXT_CHARS) -> str:
     """Cap length. A cut text carries a hash of the full text, so two different long texts
-    that share a prefix still compare as different."""
+    that share a prefix still compare as different.
+    """
     if len(text) <= max_chars:
         return text
     digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:16]
@@ -38,7 +39,8 @@ def _escape(ch: str) -> str:
 
 def safe_text(value: object, limit: int | None = 200) -> str:
     """Single-line, printable rendering of untrusted text. Control, format, bidi and
-    line-separator characters are shown as visible escapes."""
+    line-separator characters are shown as visible escapes.
+    """
     pieces: list[str] = []
     length = 0
     for ch in str(value):
@@ -63,7 +65,8 @@ def has_unsafe_chars(text: str) -> bool:
 
 def console_safe(text: str, encoding: str | None = None) -> str:
     """Make text printable on a console whose encoding cannot show every character (a Windows
-    code page, for example). Unencodable characters become visible escapes instead of raising."""
+    code page, for example). Unencodable characters become visible escapes instead of raising.
+    """
     import sys
 
     target = encoding or getattr(sys.stdout, "encoding", None) or "utf-8"

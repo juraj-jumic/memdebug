@@ -39,7 +39,8 @@ def _opcodes(old_tokens: list[str], new_tokens: list[str]) -> list[tuple]:
     """Word-level opcodes where two changes separated only by spaces count as one change.
 
     Without this, "likes tea" becoming "ignore all previous instructions" is reported as two edits with a
-    space between them."""
+    space between them.
+    """
     ops = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False).get_opcodes()
     merged: list[tuple] = []
     k = 0
@@ -202,7 +203,8 @@ def change_snippet(before: str, after: str, context: int = 70) -> tuple[Markup, 
 
     This answers "what happened" at a glance: a long file that gained one sentence shows that sentence, not
     the start of the file. A rewritten line shows what it says now. Line breaks never reach the result; it is
-    escaped like everything else."""
+    escaped like everything else.
+    """
     if len(before) > MAX_DOCUMENT_CHARS or len(after) > MAX_DOCUMENT_CHARS:
         return None
     old, new = _split(before, after)

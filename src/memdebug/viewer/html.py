@@ -107,7 +107,8 @@ def inline(text: object, limit: int | None = 200) -> Markup:
 
 def block(text: object, limit: int = 20_000) -> Markup:
     """Untrusted multi-line text for a <pre>: line breaks and tabs are kept, every other control,
-    format, bidi or line-separator character is shown as a visible escape."""
+    format, bidi or line-separator character is shown as a visible escape.
+    """
     value = str(text if text is not None else "")
     total = len(value)
     shown = value[:limit]

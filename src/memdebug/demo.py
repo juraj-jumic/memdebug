@@ -49,7 +49,8 @@ class DemoResult:
 
 def prepare_folder(folder: Path | None) -> tuple[Path, bool]:
     """The folder the demo works in, and whether it is a temporary one the demo should remove afterwards.
-    A folder you name must be new or empty: the demo never reuses or mixes with existing files."""
+    A folder you name must be new or empty: the demo never reuses or mixes with existing files.
+    """
     if folder is None:
         return Path(tempfile.mkdtemp(prefix="memdebug-demo-")).resolve(), True
     path = folder.expanduser().resolve()
