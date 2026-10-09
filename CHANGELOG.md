@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [Unreleased]
+## [0.6.1] - 2026-10-09
 
 ### Added
 - **Double-clicking the stand-alone Windows program now explains itself.** Before, it printed its help and exited, so the console window opened and closed

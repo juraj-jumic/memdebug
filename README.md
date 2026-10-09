@@ -51,7 +51,7 @@ If your shell cannot find the `memdebug` command, `python -m memdebug` (on Windo
 It is the same program with Python packed inside, and it still needs git. It is **not signed**, so Windows SmartScreen or macOS Gatekeeper may warn
 the first time (see [docs/windows.md](docs/windows.md)); compare the file with the `SHA256SUMS` on the release page before you run it. Mem0 needs the
 `pip` install, and the programs take about a second to start. Tried by the author on Windows 11; the Linux and macOS programs are built and
-smoke-tested by CI on those systems.
+smoke-tested by CI on those systems. Double-clicking it only shows a short explanation (it is a command-line program), so start it from a terminal.
 
 The demo plants an instruction into a note behind git's back, shows memdebug catching it, rolls the file back without losing
 the planted text, and shows the ledger noticing a tampered copy. It works in a throwaway folder and removes it afterwards.
