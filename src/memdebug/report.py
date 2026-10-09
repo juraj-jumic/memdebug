@@ -304,7 +304,7 @@ def to_sarif(report: Report) -> str:
 RENDERERS = {"markdown": to_markdown, "json": to_json, "sarif": to_sarif}
 
 
-def write_report(path, text: str, *, force: bool = False) -> None:
+def write_report(path: str | os.PathLike[str], text: str, *, force: bool = False) -> None:
     """Write a report file.
 
     It contains memory text, so it is created private; an existing file is only replaced with `force`, and links and folders

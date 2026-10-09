@@ -6,6 +6,7 @@ a page are ids matched against strict patterns, small integers, and members of f
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlencode
@@ -75,7 +76,7 @@ class Context:
 THEMES = (("auto", "Auto"), ("light", "Light"), ("dark", "Dark"))
 
 
-def url(path: str, **params) -> str:
+def url(path: str, **params: str | int | None) -> str:
     """A path followed by a query string built from the params that are not None, sorted by name."""
     query = urlencode([(k, v) for k, v in sorted(params.items()) if v is not None])
     return f"{path}?{query}" if query else path
@@ -105,7 +106,7 @@ def short(digest: str) -> str:
 PUT_BACK_KINDS = ("folder", "markdown-git")  # the store types memdebug can write back; it only ever reads the others
 
 
-def earlier_snapshot(snapshots, backend: str, scope: dict, seq: int) -> SnapshotInfo | None:
+def earlier_snapshot(snapshots: Iterable[SnapshotInfo], backend: str, scope: dict, seq: int) -> SnapshotInfo | None:
     """The latest snapshot of this store taken before ledger entry `seq`.
 
     That is the saved state a person would most likely want back. A snapshot belongs to the store when its
@@ -458,7 +459,7 @@ def rollback_section(event: MemoryEvent) -> list[Markup]:
     details = rollback_details(event)
     if details is None:
         return [el("p", "This record could not be read. Run the integrity check.", class_="why")]
-    def link(sid, text):
+    def link(sid: str, text: str) -> Markup:
         return el("a", text, href=f"/snapshot/{sid}")
 
     folder = event.backend == "folder"
@@ -730,7 +731,7 @@ def diff_page(ledger: Ledger, ctx: Context, old_id: str | None, new_id: str | No
         full: Show full texts instead of short excerpts.
     """
     infos = ledger.list_snapshots()
-    def options(chosen):
+    def options(chosen: str | None) -> list[Markup]:
         return [el("option", f"{i.id}: {stamp(i.taken_at)} ({i.count} memories)", value=i.id, selected=(i.id == chosen))
                 for i in infos]
 

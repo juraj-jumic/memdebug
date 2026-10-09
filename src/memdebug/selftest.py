@@ -180,10 +180,10 @@ def check_history_file_is_read_only() -> str:
     create the file.
     """
     class _Stub:
-        def get_all(self, **kw):
+        def get_all(self, **kw: object) -> dict[str, list]:
             return {"results": []}
 
-        def history(self, memory_id):
+        def history(self, memory_id: str) -> list:
             return []
 
     with _tmp() as base:
@@ -407,7 +407,7 @@ def check_viewer_is_local_and_protected() -> str:
             if listening != "127.0.0.1":
                 raise AssertionError(f"the viewer is listening on {listening}, not only on this computer")
 
-            def ask(method="GET", host=None, cookie=True, target="/"):
+            def ask(method: str = "GET", host: str | None = None, cookie: bool = True, target: str = "/") -> int:
                 conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
                 conn.putrequest(method, target, skip_host=True, skip_accept_encoding=True)
                 conn.putheader("Host", host or f"127.0.0.1:{server.port}")

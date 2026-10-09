@@ -90,7 +90,7 @@ def _render_children(children: Iterable) -> str:
     return "".join(out)
 
 
-def el(tag: str, *children, **attrs) -> Markup:
+def el(tag: str, *children: object, **attrs: object) -> Markup:
     """Build one HTML element. Plain string children are escaped; only `Markup` is inserted as it is.
 
     Args:

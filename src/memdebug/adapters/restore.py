@@ -29,7 +29,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Any, Callable, Sequence
 
 from ..errors import RestoreError
 from ..models import Snapshot
@@ -220,7 +220,7 @@ class Restorer(FileOps):
                 raise RestoreError(f"git timed out after {self._git.timeout:g} seconds")
             return code, data, run.stderr_text()
 
-    def _must(self, args: list[str], what: str, **kw) -> bytes:
+    def _must(self, args: list[str], what: str, **kw: Any) -> bytes:  # Any: passed on to _run (stdin, env, limit)
         code, data, err = self._run(args, **kw)
         if code != 0:
             raise RestoreError(f"git could not {what}: {safe_text(err, 200)}")
@@ -579,7 +579,7 @@ class Restorer(FileOps):
             raise RestoreError("git returned an unexpected object id")
         return sha
 
-    def _in_private_index(self, work) -> str:
+    def _in_private_index(self, work: Callable[[dict[str, str]], str]) -> str:
         """Run `work(env)` with a private index file (so the real index and working tree are untouched); returns its result."""
         folder = tempfile.mkdtemp(prefix="memdebug-")
         try:
@@ -638,7 +638,10 @@ class Restorer(FileOps):
             if code != 0:
                 raise RestoreError("the index does not match the new commit")
 
-    def _undo(self, plan: Plan, journal, created_dirs, moved, undo_entries, commit) -> list[str]:
+    def _undo(
+        self, plan: Plan, journal: list[tuple[str, bytes | None]], created_dirs: list[str], moved: dict[str, bool],
+        undo_entries: list[tuple[str, str | None, str]], commit: str | None,
+    ) -> list[str]:
         """Put everything back, newest step first. Returns what could not be undone."""
         problems = self._undo_files(journal, created_dirs)
         if moved["index"]:

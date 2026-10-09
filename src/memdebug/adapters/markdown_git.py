@@ -159,7 +159,7 @@ def _spawn_flags() -> dict:
 class _Run:
     """One git child process with a hard time limit."""
 
-    def __init__(self, proc: subprocess.Popen, errfile, timeout: float):
+    def __init__(self, proc: subprocess.Popen, errfile: IO[bytes], timeout: float):
         self.proc = proc
         self._errfile = errfile
         self.timed_out = False
@@ -288,7 +288,7 @@ class _Git:
             raise AdapterError(f"git failed: {safe_text(run.stderr_text(), 200)}")
 
 
-def _read_lines(stream, run: _Run) -> Iterator[bytes | None]:
+def _read_lines(stream: IO[bytes], run: _Run) -> Iterator[bytes | None]:
     """Lines from git, with bounded line length and total size. None marks an overlong line."""
     total = 0
     while True:
@@ -323,7 +323,7 @@ class _BlobReader:
         self._batch = self._stack.enter_context(self._git.spawn(["cat-file", "--batch"], interactive=True))
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self._stack.close()
 
     @property
@@ -590,7 +590,7 @@ class MarkdownGitAdapter:
             warnings.add("history was only partly read (row limit or memory budget reached)")
         return HistoryRead(events=events, refs=refs, truncated=truncated, skipped=skipped, warnings=warnings.as_list())
 
-    def _parse_header(self, text: str, now: datetime, warnings: Warnings):
+    def _parse_header(self, text: str, now: datetime, warnings: Warnings) -> tuple[str, datetime, bool, str | None] | None:
         parts = text[1:].split("\x02")
         if len(parts) != 3 or not _SHA_RE.match(parts[0]):
             warnings.add("unreadable commit header; its changes were skipped")
@@ -603,7 +603,7 @@ class MarkdownGitAdapter:
             warnings.add(f"commit {parts[0][:12]}: date is in the future")
         return (parts[0], ts, observed, clean_id(parts[2]))
 
-    def _parse_change(self, text: str, header, warnings: Warnings) -> _Change | None:
+    def _parse_change(self, text: str, header: tuple[str, datetime, bool, str | None], warnings: Warnings) -> _Change | None:
         match = _RAW_RE.match(text)
         if not match:
             warnings.add("unreadable change line from git; skipped")
@@ -626,7 +626,7 @@ class MarkdownGitAdapter:
         commit, ts, observed, author = header
         return _Change(commit, ts, observed, author, relpath, status, old_sha, new_sha)
 
-    def _events_from(self, changes: list[_Change], warnings: Warnings):
+    def _events_from(self, changes: list[_Change], warnings: Warnings) -> tuple[list[MemoryEvent], int, bool]:
         events: list[MemoryEvent] = []
         skipped = 0
         total = 0

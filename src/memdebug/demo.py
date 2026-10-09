@@ -23,7 +23,7 @@ from .adapters.restore import Restorer
 from .diff import line_diff
 from .errors import MemdebugError
 from .ledger import Ledger
-from .models import Op
+from .models import Op, SnapshotInfo
 from .rollback_flow import run_rollback
 from .sync import sync
 from .textsafe import safe_text
@@ -89,7 +89,7 @@ def prepare_folder(folder: Path | None) -> tuple[Path, bool]:
 def remove_folder(path: Path) -> None:
     """Delete a demo folder. Git marks its object files read-only, which Windows refuses to delete without a nudge."""
 
-    def nudge(function, target, *_) -> None:
+    def nudge(function: Callable[[str], object], target: str, *_: object) -> None:
         try:
             os.chmod(target, stat.S_IWRITE)
             function(target)
@@ -155,7 +155,7 @@ def run_demo(folder: Path, say: Callable[[str], None]) -> DemoResult:
     adapter = MarkdownGitAdapter(repo, store="demo-agent")
     restorer = Restorer(adapter)
 
-    def snapshot(label: str):
+    def snapshot(label: str) -> SnapshotInfo:
         live = sync(adapter, ledger, SCOPE, settle_seconds=0).live
         if live is None:
             raise MemdebugError("the sync did not produce a listing to snapshot")

@@ -420,7 +420,7 @@ class Ledger:
         return {r[0] for r in rows}
 
     @staticmethod
-    def _entry_from_row(seq, event_id, payload, prev, digest) -> LedgerEntry:
+    def _entry_from_row(seq: int, event_id: str, payload: str, prev: str, digest: str) -> LedgerEntry:
         try:
             event = MemoryEvent.model_validate_json(payload)
         except ValidationError as exc:
@@ -545,7 +545,10 @@ class Ledger:
         return result
 
     @staticmethod
-    def _check_event_content(result, seq, backend, ref, snap, payload, op_col, trust_col, recorded, deleted) -> None:
+    def _check_event_content(
+        result: VerifyResult, seq: int, backend: str, ref: str | None, snap: str | None, payload: str,
+        op_col: str | None, trust_col: str | None, recorded: dict[str, dict], deleted: set[str],
+    ) -> None:
         try:
             data = json.loads(payload)
             op = data.get("op")
@@ -569,7 +572,7 @@ class Ledger:
         except (ValueError, AttributeError, KeyError, TypeError):
             result.problems.append(f"seq {seq} content is not readable")
 
-    def _verify_snapshots(self, result, hash_by_seq, recorded, deleted) -> None:
+    def _verify_snapshots(self, result: VerifyResult, hash_by_seq: dict[int, str], recorded: dict[str, dict], deleted: set[str]) -> None:
         present: set[str] = set()
         for row in self._db.execute("SELECT id FROM snapshots ORDER BY id").fetchall():
             sid = f"s{row[0]}"

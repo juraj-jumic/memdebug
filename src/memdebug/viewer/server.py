@@ -39,6 +39,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from ..agents import scan_agents
@@ -171,7 +172,7 @@ class ViewerServer(http.server.ThreadingHTTPServer):
         super().__init__((LOOPBACK, port), _Handler)
         self.state = ViewerState(path, self.server_address[1], self.token)
 
-    def process_request(self, request, client_address) -> None:
+    def process_request(self, request: Any, client_address: Any) -> None:  # Any: socketserver's own request and address types
         """Serve the connection on a new thread, or close it at once when MAX_CONNECTIONS are already open."""
         # One thread per connection would let idle connections pile up; beyond the cap, hang up at once.
         if not self._connection_slots.acquire(blocking=False):
@@ -179,7 +180,7 @@ class ViewerServer(http.server.ThreadingHTTPServer):
             return
         super().process_request(request, client_address)
 
-    def process_request_thread(self, request, client_address) -> None:
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
         """Serve one connection, then free its slot in the connection cap."""
         try:
             super().process_request_thread(request, client_address)
@@ -213,11 +214,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     # -- logging that never records the secret or raw input ------------------------------------------------
 
-    def log_message(self, format: str, *args) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         text = _TOKEN_IN_TEXT.sub("token=...", format % args if args else format)
         logger.info("%s", safe_text(text, 200))
 
-    def log_request(self, code="-", size="-") -> None:
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
         path = (getattr(self, "path", "") or "").split("?", 1)[0]
         logger.info("%s %s -> %s", safe_text(getattr(self, "command", "-"), 10), safe_text(path, 100), code)
 
@@ -239,7 +240,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def _text(self, status: int, message: str, extra: tuple = ()) -> None:
         self._send(status, (message + "\n").encode("utf-8"), "text/plain; charset=utf-8", extra)
 
-    def send_error(self, code, message=None, explain=None) -> None:  # replaces the default HTML page
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:  # replaces the default HTML page
         self._text(code, f"Error {code}")
 
     def _page(self, page: pages.Page) -> None:
@@ -433,7 +434,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             ledger.close()
         self._page(result)
 
-    def _render(self, name, ledger: Ledger, state: ViewerState, **p) -> pages.Page:
+    def _render(self, name: str, ledger: Ledger, state: ViewerState, **p: Any) -> pages.Page:
         ctx = self.ctx
         if name == "overview":
             return pages.overview(ledger, ctx)
@@ -456,7 +457,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         return pages.integrity(self.ctx, cached.counts, cached.result, cached.checked_at)
 
 
-def serve(ledger_path: str | Path, port: int, announce, open_browser: bool = False) -> None:
+def serve(ledger_path: str | Path, port: int, announce: Callable[[str], None], open_browser: bool = False) -> None:
     """Run until interrupted. `announce(url)` is called once the server is listening."""
     server = ViewerServer(ledger_path, port)
     try:

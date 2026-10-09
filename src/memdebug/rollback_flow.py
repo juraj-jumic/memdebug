@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Protocol, Sequence
 
+from .adapters.base import MemoryAdapter
 from .adapters.restore import Outcome, Plan
 from .errors import MemdebugError
 from .ledger import MAX_ROLLBACK_FILES, Ledger, validate_rollback_details
@@ -73,7 +74,7 @@ def rollback_details(snapshot: Snapshot, plan: Plan, before_id: str | None, afte
             "files": [{"path": i.path, "action": i.action, "source": i.source} for i in items[:MAX_ROLLBACK_FILES]]}
 
 
-def run_rollback(adapter, ledger: Ledger, scope: dict[str, str], restorer: Restoring, snapshot: Snapshot, plan: Plan, *,
+def run_rollback(adapter: MemoryAdapter, ledger: Ledger, scope: dict[str, str], restorer: Restoring, snapshot: Snapshot, plan: Plan, *,
                  only: list[str] | None = None, remove_added: bool = False, settle: float = 1.0,
                  warn: Callable[[str], None] = lambda text: None) -> RollbackResult:
     """Carry out a confirmed plan and record it in the ledger.

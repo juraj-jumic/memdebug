@@ -19,7 +19,7 @@ from typing import Callable
 from .adapters.base import HistoryRead, LiveMemories, MemoryAdapter
 from .errors import LedgerConflictError
 from .ledger import Ledger
-from .models import MemoryEvent, Op, Source, derive_trust
+from .models import Memory, MemoryEvent, Op, Source, derive_trust
 from .reconcile import find_external_changes, replay_events
 from .textsafe import safe_text
 
@@ -56,7 +56,7 @@ def _key(event: MemoryEvent) -> tuple[str, str | None, str | None]:
 ROLLBACK_ACTOR = "memdebug rollback"
 
 
-def _with_source(event: MemoryEvent, memory) -> MemoryEvent:
+def _with_source(event: MemoryEvent, memory: Memory | None) -> MemoryEvent:
     """A change that adds or alters a memory carries what the backend says about where that memory came from."""
     if memory is None or memory.source is None or event.after is None or event.source is not None:
         return event
@@ -128,7 +128,10 @@ def sync(
     raise last_error
 
 
-def _sync_once(adapter, ledger, scope, now, settle_seconds, sleep, adopt_existing, max_rows, acknowledge) -> SyncReport:
+def _sync_once(
+    adapter: MemoryAdapter, ledger: Ledger, scope: dict[str, str], now: datetime, settle_seconds: float,
+    sleep: Callable[[float], None], adopt_existing: bool, max_rows: int, acknowledge: dict[str, str | None],
+) -> SyncReport:
     known_refs = ledger.known_refs(adapter.name)
     had_events = ledger.has_events(adapter.name)
 

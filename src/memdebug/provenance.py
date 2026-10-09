@@ -20,7 +20,7 @@ import json
 import os
 import re
 import stat
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -207,7 +207,7 @@ def _log_files(root: Path, start: datetime) -> tuple[list[tuple[str, int]], bool
     return [(path, size) for _, path, size in found[:MAX_LOG_FILES]], complete
 
 
-def _lines(path: str):
+def _lines(path: str) -> Iterator[bytes | None]:
     """Lines of one log as bytes, read without following a link. Yields None for a line too long to read, then carries on after it."""
     fd = os.open(path, os.O_RDONLY | _O_BINARY | _O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0))
     try:
@@ -228,7 +228,7 @@ def _lines(path: str):
         os.close(fd)
 
 
-def _calls(record: object):
+def _calls(record: object) -> Iterator[tuple[str, str, datetime, str, object]]:
     """The (session, record id, time, tool, input) of every tool call in one log record, with the ids checked."""
     if not isinstance(record, dict) or record.get("type") != "assistant":
         return
