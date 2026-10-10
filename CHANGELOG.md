@@ -5,6 +5,11 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## [Unreleased]
 
+### Documented
+- **Open WebUI: a memory the model saves itself looks like one added by hand.** Tried on a real installation: a memory saved by the model through Open WebUI's
+  native `add_memory` tool carries the same `created_by: manual` label as one added in Settings, and in a Temporary Chat the timing line says "consistent with being
+  added by hand". The label and the timing cannot separate the two (docs/agents.md, docs/threat-model.md). `memdebug watch` still records every add, edit and removal.
+
 ### Fixed
 - **A git store with a very long history is no longer called quiet.** memdebug reads at most 100,000 file changes of a git store's history, and at most
   100,000,000 characters of old and new text (every edit counts both versions, so a note of about 20 KB edited 2,500 times reaches the second limit first).

@@ -189,7 +189,9 @@ Read these. They are why this is alpha software.
 * **Provenance is a first slice, for Open WebUI only.** It records the app's own label and a timing comparison with chat messages. That is
   evidence, not proof: the label can be forged by anything that can write the database, and "a chat was active within 120 seconds" is a
   correlation. Nothing yet says which conversation turn wrote a memory or what the assistant had just read. For other agents the trust
-  field stays `unknown`.
+  field stays `unknown`. Tried on a real installation: a memory the model saved itself (native tool call) carried the same label as one added
+  by hand in Settings (`created_by: manual`), and in a Temporary Chat (no stored messages) the timing line said "consistent with being added
+  by hand". So for Open WebUI the evidence cannot separate the assistant's own writes from yours.
 * **memdebug does not block attacks or inspect meaning.** Hints are heuristics on wording; they miss paraphrases and many languages and can
   flag harmless text. It is not a prompt-injection detector.
 * **The agent catalog is only as right as the documentation it came from,** and locations change between versions. Anything not in it can be added with `memdebug add`.
