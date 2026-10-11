@@ -216,6 +216,12 @@ class OpenWebUIAdapter:
                     parts.append(f"{len(near)} chat message{'' if len(near) == 1 else 's'} within {WINDOW_SECONDS} s (nearest {gap:.0f} s away)")
                 else:
                     parts.append(f"no chat message within {WINDOW_SECONDS} s (nearest is {gap:.0f} s away)")
+        if isinstance(data, dict) and label in ("tool", "background_review"):
+            # Open WebUI's update_memory tool also records which model and which chat message it came from (ids only, never chat text).
+            model = _plain(data.get("model"))
+            ids = [word for word, key in (("chat", "chat_id"), ("message", "message_id")) if data.get(key)]
+            parts.append(f"Open WebUI recorded it as a {'background review' if label == 'background_review' else 'tool'} write"
+                         + (f" by model {model}" if model else "") + (f", with its {' and '.join(ids)} id" if ids else ""))
         if label == "manual" and not near and touched is not None and chat:
             parts.append("consistent with being added by hand in the settings")
         elif label == "manual" and near:

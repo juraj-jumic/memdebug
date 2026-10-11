@@ -194,3 +194,31 @@ def test_the_commands_keep_working_end_to_end(tmp_path):
     assert runner.invoke(cli.app, ["add", str(path), "--db", str(db)]).exit_code == 0
     out = runner.invoke(cli.app, ["check", "--db", str(db), "--settle", "0"])
     assert out.exit_code == 0 and "quiet" in out.output
+
+
+# -- the richer record the update_memory tool leaves (Open WebUI 0.10 and later) ------------------------------------------------------
+
+def test_a_tool_write_names_the_model_and_that_chat_and_message_ids_were_recorded_without_reading_any_chat(tmp_path):
+    meta = {"created_by": "tool", "chat_id": "chat-secret-id", "message_id": "msg-secret-id", "model": "gpt-oss:20b"}
+    src = source_of(make_db(tmp_path / "a.db", memories=[("m1", "u1", "x", meta, "user", BASE, BASE)], chats=[("assistant", BASE + 5)]))
+    assert src.actor_id == "created_by=tool" and src.kind == SourceKind.UNKNOWN
+    assert "recorded it as a tool write by model gpt-oss:20b, with its chat and message id" in src.note
+    assert "secret-id" not in src.note  # the ids are only said to exist, never copied
+
+
+def test_a_background_review_write_says_so_and_a_missing_model_is_just_left_out(tmp_path):
+    meta = {"created_by": "background_review", "chat_id": "c"}
+    src = source_of(make_db(tmp_path / "b.db", memories=[("m1", "u1", "x", meta, "user", BASE, BASE)]))
+    assert "recorded it as a background review write, with its chat id" in src.note and " by model" not in src.note
+
+
+def test_a_hostile_model_name_is_reduced_to_its_size(tmp_path):
+    meta = {"created_by": "tool", "model": "\x1b[2J<script>" + "m" * 100}
+    src = source_of(make_db(tmp_path / "c.db", memories=[("m1", "u1", "x", meta, "user", BASE, BASE)]))
+    assert "by model (text, " in src.note and "\x1b" not in src.note and "<script>" not in src.note
+
+
+def test_a_manual_label_gets_no_tool_sentence_even_if_the_other_keys_are_there(tmp_path):
+    meta = {"created_by": "manual", "model": "gpt-oss:20b", "chat_id": "c"}
+    src = source_of(make_db(tmp_path / "d.db", memories=[("m1", "u1", "x", meta, "user", BASE, BASE)]))
+    assert "recorded it as" not in src.note
