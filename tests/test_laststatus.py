@@ -62,6 +62,15 @@ def test_it_never_writes_through_a_link(tmp_path):
         ls.read(tmp_path / "status.json")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="creating a symlink needs a privilege on Windows")
+def test_a_link_to_a_perfectly_good_record_is_still_not_read(tmp_path):
+    good = saved(tmp_path, record())
+    link = tmp_path / "linked-status.json"
+    link.symlink_to(good)
+    with pytest.raises(ls.StatusError, match="not usable"):  # refused because it is a link, not because of what is in it
+        ls.read(link)
+
+
 @pytest.mark.parametrize("bad", ["not json", "[]", "{}", json.dumps(record(version=2)), json.dumps(record(checked_at="yesterday")),
                                  json.dumps(record(checked_at="2026-10-11T12:00:00")), json.dumps(record(stores="x")),
                                  json.dumps(record(stores=["x"]))], ids=["text", "list", "empty", "version", "time", "naive", "stores", "store"])
