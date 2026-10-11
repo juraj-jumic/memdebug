@@ -431,14 +431,27 @@ def baseline(store: StoreConfig, ledger: Ledger, label: str = "baseline", *, ref
 
 def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[str], None], ring: Callable[[], None] = lambda: None,
           cycles: int | None = None, sleep: Callable[[float], None] = time.sleep, settle: float = 1.0, ledger_path: Path | None = None,
-          clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
-    """Check every store again and again. Only things worth knowing are printed: changes, and an error or a store not read in full when it first appears."""
+          clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc), reload: Callable[[], Registry] | None = None) -> None:
+    """Check every store again and again. Only things worth knowing are printed: changes, and an error or a store not read in full when it first appears.
+
+    With `reload`, the list of stores is read again before every look, so a store added while this runs is picked up; a settings file that cannot
+    be read at that moment never stops the watching, the previous list is kept.
+    """
     every = max(MIN_INTERVAL, every)
     say(f"Watching {len(registry.stores)} store(s) every {every:g} seconds. Press Ctrl+C to stop.")
     last_error: dict[str, str | None] = {}
     last_incomplete: dict[str, bool] = {}
+    ledger_was_ok = True
     done = 0
     while cycles is None or done < cycles:
+        if reload is not None:
+            try:
+                fresh = reload()
+            except MemdebugError:
+                fresh = registry
+            if fresh.stores != registry.stores:
+                say(f"The list of watched stores changed: now {len(fresh.stores)} store(s).")
+            registry = fresh
         summary = check_all(registry, ledger, settle=settle, ledger_path=ledger_path)
         stamp = clock().astimezone().strftime("%H:%M:%S")
         shown = False
@@ -455,9 +468,10 @@ def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[st
                 for line in [*hint_lines(result), *provenance_lines(result), *source_lines(result)]:
                     say(line)
                 shown = True
-        if not summary.ledger_ok:
+        if not summary.ledger_ok and ledger_was_ok:  # said once when it starts to fail, not at every look
             say(f"[{stamp}]  PROBLEM: the ledger failed its integrity check")
             shown = True
+        ledger_was_ok = summary.ledger_ok
         if shown and (summary.attention or summary.hinted or summary.incomplete):
             ring()
         done += 1

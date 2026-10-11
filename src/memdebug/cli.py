@@ -15,7 +15,7 @@ from typing import Any, Callable, NoReturn, Optional, ParamSpec, TypeVar, cast
 
 import typer
 
-from . import longpath
+from . import autostart, longpath
 from .adapters.base import MemoryAdapter
 from .adapters.folder import FolderAdapter
 from .adapters.folder_restore import FolderRestorer
@@ -32,6 +32,7 @@ from .diff import Diff, diff_snapshots, line_diff
 from .docker_source import valid_container
 from .errors import MemdebugError
 from .ledger import Ledger
+from .logfile import LogFile
 from .models import Snapshot
 from .monitor import alarms_since_snapshot, baseline, check_all, check_store, status_lines, store_hints, summary_lines, watch
 from .paths import backup_root_for, default_ledger_path
@@ -989,6 +990,7 @@ def watch_command(
     every: float = typer.Option(60.0, "--every", min=5.0, max=86400.0, help="Seconds between looks."),
     once: bool = typer.Option(False, "--once", help="Look once and stop (like 'check', but prints only what is new)."),
     bell: bool = typer.Option(True, "--bell/--no-bell", help="Ring the terminal bell when something needs a look."),
+    log: Optional[Path] = typer.Option(None, "--log", help="Also append what it says to this file (kept small), for a watcher that runs without a terminal."),
     settle: float = SETTLE_OPTION,
     db: Path = DB_OPTION,
 ) -> None:
@@ -998,11 +1000,19 @@ def watch_command(
         echo("Nothing to watch yet. Run 'memdebug setup' for a guided start, or 'memdebug add <path>'.")
         raise typer.Exit(2)
     ledger = _open_ledger(db)
+    logger = LogFile(log) if log is not None else None
+
+    def say(line: str) -> None:
+        echo(line)
+        if logger is not None:
+            logger(line)
+
     try:
-        watch(registry, ledger, every=every, say=echo, ring=(lambda: typer.echo("\a", nl=False)) if bell else (lambda: None),
-              cycles=1 if once else None, settle=settle, ledger_path=db or default_ledger_path())
+        watch(registry, ledger, every=every, say=say, ring=(lambda: typer.echo("\a", nl=False)) if bell else (lambda: None),
+              cycles=1 if once else None, settle=settle, ledger_path=db or default_ledger_path(),
+              reload=lambda: load_registry(_config_path(db)))
     except KeyboardInterrupt:
-        echo("\nStopped.")
+        say("Stopped.")
 
 
 @app.command("agents")
@@ -1090,6 +1100,85 @@ def setup_command(
     echo("  memdebug check    look for changes once")
     echo("  memdebug watch    keep looking, and say when something changes")
     echo("  memdebug serve    see it all in your browser")
+    echo("  memdebug autostart install    keep watching in the background, starting at login (shows what it would do first)")
+
+
+# -- autostart --------------------------------------------------------------------------------------------------------------
+
+autostart_app = typer.Typer(
+    help="Keep 'memdebug watch' running in the background, starting at login. Shows what it would do and changes nothing without --apply.",
+    no_args_is_help=True,
+)
+app.add_typer(autostart_app, name="autostart")
+
+
+def _autostart_plan(db: Optional[Path], every: float) -> autostart.Plan:
+    ledger_path = (db or default_ledger_path()).expanduser().resolve()
+    data_dir = ledger_path.parent
+    system = autostart.system_name()
+    return autostart.make_plan(
+        system, autostart.launch_command(), autostart.watch_arguments(every, data_dir / "watch.log", ledger_path if db is not None else None),
+        data_dir=data_dir, home=Path.home(), uid=os.getuid() if hasattr(os, "getuid") else 0,
+        config_home=Path(os.environ["XDG_CONFIG_HOME"]) if os.environ.get("XDG_CONFIG_HOME", "").startswith("/") else None)
+
+
+@autostart_app.command("install")
+@guarded
+def autostart_install(
+    every: float = typer.Option(60.0, "--every", min=5.0, max=86400.0, help="Seconds between looks."),
+    apply: bool = typer.Option(False, "--apply", help="Really set it up (without this, only show what would be done)."),
+    yes: bool = typer.Option(False, "--yes", help="Do not ask for confirmation with --apply."),
+    db: Path = DB_OPTION,
+) -> None:
+    """Show, and with --apply set up, a background watcher that starts when you log in."""
+    plan = _autostart_plan(db, every)
+    if not load_registry(_config_path(db)).stores:
+        echo("Nothing is watched yet, so there is nothing to keep watching. Run 'memdebug setup' first.")
+        raise typer.Exit(2)
+    echo(f"A background watcher on {plan.system}:")
+    for line in plan.summary:
+        echo(f"  - {safe_text(line, 400)}")
+    echo(f"  It looks every {every:g} seconds and keeps a short log next to your ledger (watch.log).")
+    echo("  It only reads your memory, like 'memdebug watch'. 'memdebug autostart remove' undoes all of it.")
+    if not apply:
+        echo("\nNothing has been changed. Add --apply to do this.")
+        return
+    if not yes and not typer.confirm("\nSet this up?", default=False):
+        echo("Nothing was changed.")
+        raise typer.Exit(1)
+    for line in autostart.install(plan):
+        echo(f"  {safe_text(line, 300)}")
+    echo("Done. It starts now and at every login.")
+
+
+@autostart_app.command("remove")
+@guarded
+def autostart_remove(
+    apply: bool = typer.Option(False, "--apply", help="Really remove it (without this, only show what would be done)."),
+    db: Path = DB_OPTION,
+) -> None:
+    """Show, and with --apply remove, the background watcher."""
+    plan = _autostart_plan(db, 60.0)
+    if not autostart.installed(plan):
+        echo("The background watcher is not set up.")
+        return
+    echo("This would stop the background watcher and remove what 'memdebug autostart install' created:")
+    for path in plan.undo_remove:
+        echo(f"  - {safe_text(path, 300)}")
+    if not apply:
+        echo("\nNothing has been changed. Add --apply to do this.")
+        return
+    for line in autostart.remove(plan):
+        echo(f"  {safe_text(line, 300)}")
+    echo("Done.")
+
+
+@autostart_app.command("status")
+@guarded
+def autostart_status(db: Path = DB_OPTION) -> None:
+    """Say whether the background watcher is set up."""
+    plan = _autostart_plan(db, 60.0)
+    echo("The background watcher is set up." if autostart.installed(plan) else "The background watcher is not set up. 'memdebug autostart install' shows how.")
 
 
 @app.command("serve")
