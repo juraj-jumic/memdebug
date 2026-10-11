@@ -150,7 +150,7 @@ def test_the_kind_of_a_path_is_worked_out_from_its_structure(tmp_path):
     db.execute("CREATE TABLE things (x)")
     db.commit()
     db.close()
-    with pytest.raises(st.SettingsError, match="not a database"):
+    with pytest.raises(st.SettingsError, match="not one memdebug recognises"):
         st.detect_kind(other)
 
 
