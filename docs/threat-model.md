@@ -226,7 +226,7 @@ Read these before relying on memdebug: they are what it does not do.
   Status page say something wrong or say nothing: it cannot change what is recorded, and `memdebug verify`, `check` and the witness do not depend on it.
 * **A background watcher is a startup item.** Anything that can write its launcher script, service file or agent file, which belong to your user, can make it
   run something else at login, as for any startup item. memdebug creates them private to you and `memdebug autostart status` and `remove` show what is there. The
-  Windows, Linux and macOS forms have not yet been applied on a real computer by the maintainer (their plans and commands are tested with a recorder).
+  Windows form was applied once on a real Windows 11 computer by the maintainer (it found and fixed two bugs, in 1.0.1); the Linux and macOS forms have not been applied on a real computer (their plans and commands are tested with a recorder).
 * **The MCP memory file is read as a whole.** The server rewrites it on every change; a change made and reverted between two looks is invisible, like every store without history.
 * **Open WebUI:** a change to only a memory's `type` or `path` is not noticed, Postgres and SQLCipher installations cannot be read (the failure is reported), and the
   app's label cannot tell the assistant's own writes from yours (see docs/agents.md).

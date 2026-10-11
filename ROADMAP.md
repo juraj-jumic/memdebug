@@ -45,7 +45,7 @@ memdebug 1.0 means the interfaces in [docs/stability.md](docs/stability.md) are 
 1. **Reading only what is new in a long git history.** A git store beyond 100,000 file changes or 100,000,000 characters of edits is only partly read, and
    `check` says so loudly ("NOT READ IN FULL") instead of calling it quiet; reading just the commits since the last look is not built.
 2. **Trying things on real installations.** Only Claude Code (Windows 11) and Open WebUI (Docker) have been tried by a person. The other catalog entries follow documentation
-   or source code (see docs/agents.md); the background watcher's Linux and macOS forms, and the Windows one on a real computer, are tested only as plans and commands;
+   or source code (see docs/agents.md); the background watcher's Linux and macOS forms are tested only as plans and commands (the Windows one was tried once on a real Windows 11 computer, not through a restart);
    the Linux and macOS programs are tested by CI only. Reports from people who use these are the most useful thing anyone can give the project.
 3. **More provenance.** Which conversation turn wrote a memory and what the assistant had just read; Open WebUI's label cannot tell the assistant's own writes from a person's
    (newer versions record the model and chat for the `update_memory` tool, which is shown). Session-log readers for agents other than Claude Code (OpenClaw).

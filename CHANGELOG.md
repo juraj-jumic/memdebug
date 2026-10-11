@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (from 1.0.0 the interfaces listed in [docs/stability.md](docs/stability.md) are stable).
 
-## [Unreleased]
+## [1.0.1] - 2026-10-11
 
 ### Fixed
 - **`memdebug autostart install --apply` failed on Windows with "Access is denied".** The task was created with `schtasks /Create /SC ONLOGON`, which needs administrator rights, so the

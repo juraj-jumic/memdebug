@@ -81,8 +81,8 @@ It sets up a per-user scheduled task on Windows (a hidden window, no administrat
 macOS. Nothing is installed system-wide and nothing starts without `--apply`. The background watcher only reads, like `watch`; it looks again at the
 list of watched stores before every look, so a store you add later is picked up, and it writes what it finds to `watch.log` next to the ledger (kept
 small, private to you) and to the viewer's Status page. To run `watch` by hand with a log, use `memdebug watch --log FILE`. The Linux and macOS forms
-are built and tested as plain text and commands but have not been tried on a real system by the maintainer; the Windows form has not been applied on a
-real computer either (its plan was shown and its commands were tested with a recorder). Tell us if one does not work.
+are built and tested as plain text and commands but have not been tried on a real system by the maintainer; the Windows form was tried once on a real
+Windows 11 computer (install, a change noticed within a minute, remove; a restart was not tried). Tell us if one does not work.
 
 ## Cleaning up old backups
 
