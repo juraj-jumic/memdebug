@@ -259,3 +259,23 @@ def test_a_store_that_cannot_be_rolled_back_says_so(tmp_path):
     assert runner.invoke(cli.app, ["add", str(path), "--name", "graph", "--db", str(db)]).exit_code == 0
     out = runner.invoke(cli.app, ["rollback", "store", "graph", "--to", "s1", "--db", str(db)])
     assert out.exit_code != 0 and "cannot be rolled back" in out.output
+
+
+# -- found by the security review before 1.0 ----------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("char", ["\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e"],
+                         ids=["u2028", "u2029", "nel", "vt", "ff", "fs", "gs", "rs"])
+def test_a_character_that_python_treats_as_a_line_break_does_not_hide_an_entity(tmp_path, char):
+    line = json.dumps({"type": "entity", "name": "A", "entityType": "t", "observations": [f"before{char}after"]}, ensure_ascii=False)
+    path = tmp_path / "memory.jsonl"
+    path.write_bytes((line + "\n" + entity("B") + "\n").encode("utf-8"))  # the server wrote it raw and reads it fine: one line per entity
+    live = listing(path)
+    assert [m.id for m in live.memories] == ["entity:A", "entity:B"] and live.complete and f"before{char}after" in live.memories[0].text
+
+
+def test_a_line_nested_absurdly_deep_costs_one_line_not_the_store(tmp_path):
+    deep = "[" * 100_000 + "]" * 100_000
+    path = tmp_path / "memory.jsonl"
+    path.write_text(entity("ok") + "\n" + deep + "\n" + entity("also ok") + "\n", encoding="utf-8")
+    live = listing(path)
+    assert [m.id for m in live.memories] == ["entity:ok", "entity:also ok"] and not live.complete and "not valid JSON" in live.warnings[0]

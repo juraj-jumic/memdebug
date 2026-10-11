@@ -108,7 +108,8 @@ class McpMemoryAdapter:
         taken: set[str] = set()
         complete = True
         text = self._read().decode("utf-8", "replace")
-        for number, line in enumerate(text.splitlines(), 1):
+        # split on the newline only, as the server does: str.splitlines() also cuts at U+2028, U+2029 and U+0085, which JSON.stringify writes raw
+        for number, line in enumerate(text.split("\n"), 1):
             if not line.strip():
                 continue
             if len(memories) >= MAX_RECORDS:
@@ -128,7 +129,7 @@ class McpMemoryAdapter:
             return None
         try:
             data = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):  # a line nested thousands of levels deep must cost one line, not the whole store
             warnings.add(f"line {number} is not valid JSON and was skipped")
             return None
         kind = data.get("type") if isinstance(data, dict) else None
