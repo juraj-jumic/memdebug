@@ -26,6 +26,7 @@ VERBS = {Op.ADD: "added", Op.UPDATE: "edited", Op.DELETE: "removed", Op.EXTERNAL
 MIN_INTERVAL = 5.0
 EXPLAINABLE_KINDS = ("folder", "markdown")  # stores whose notes are files an agent's edit tool could have written
 MAX_EXPLAINED = 5                           # searches of the session logs in one pass over a store
+MAX_SOURCES = 20                            # source descriptions kept from one pass over a store
 
 
 @dataclass
@@ -41,6 +42,8 @@ class StoreResult:
         hints: Wording worth a second look in what changed, as (memory id, hint).
         previews: For each changed memory id, the text it now holds (or held before, if removed), used to label ids.
         provenance: For some flagged notes, one line about which logged agent session wrote it (see provenance.py).
+        sources: For added or edited memories of a store that describes where a write came from (Open WebUI: its own label and the timing of chats), that
+            description in words. Evidence, never proof.
         incomplete: True if the pass did not see the whole store: some notes could not be read, or the history was too long to read in full.
         history_partial: True if the store's history was only partly read (a git store beyond the row or text limit). Then changes made outside git
             are not checked at all, and the newest history is the part that is missing.
@@ -54,6 +57,7 @@ class StoreResult:
     hints: list[tuple[str, Hint]] = field(default_factory=list)  # wording worth a second look in what changed
     previews: dict[str, str] = field(default_factory=dict)  # the start of what each changed memory says, to label opaque ids
     provenance: dict[str, str] = field(default_factory=dict)  # which logged agent session wrote a flagged note, in words (see provenance.py)
+    sources: dict[str, str] = field(default_factory=dict)  # what the store itself says about where a write came from, in words
     incomplete: bool = False
     history_partial: bool = False
 
@@ -178,6 +182,20 @@ def provenance_lines(result: StoreResult) -> list[str]:
     return shown
 
 
+def source_lines(result: StoreResult) -> list[str]:
+    """Return display lines saying what the store itself records about where up to three writes came from, plus a line counting any more.
+
+    Open WebUI labels a memory the assistant saved itself exactly like one added by hand in Settings, so the lines say this is evidence, not proof.
+    """
+    if not result.sources:
+        return []
+    shown = [f"    where it came from: {friendly_id(mid, result.previews.get(mid))}: {safe_text(text, 300)}" for mid, text in list(result.sources.items())[:3]]
+    if len(result.sources) > 3:
+        shown.append(f"    ... and {len(result.sources) - 3} more")
+    shown.append("    (the app's own label and timing: evidence, not proof. Open WebUI labels a memory the assistant saved itself the same as one added by hand)")
+    return shown
+
+
 def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> StoreResult:
     """Sync one store into the ledger and report what the sync recorded.
 
@@ -215,6 +233,10 @@ def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> S
         if event.op in VERBS:
             result.changes.append((event.op, event.memory_id))
             result.previews[event.memory_id] = event.after if event.after is not None else (event.before or "")
+        if (event.op in (Op.ADD, Op.UPDATE) and event.source is not None and event.source.note
+                and len(result.sources) < MAX_SOURCES and event.memory_id not in result.sources):
+            who = ", ".join(part for part in (event.source.actor_id, event.source.role) if part)
+            result.sources[event.memory_id] = f"{who}; {event.source.note}" if who else event.source.note
         flagged = [h for h in new_hints(event.before, event.after, budget=0.1, max_chars=20_000) if h.severity == "warning"][:3] \
             if event.op in (Op.ADD, Op.UPDATE, Op.EXTERNAL) and len(result.hints) < 20 else []
         result.hints += [(event.memory_id, h) for h in flagged]
@@ -256,7 +278,7 @@ def check_all(registry: Registry, ledger: Ledger, *, settle: float = 1.0, ledger
 
 def summary_lines(summary: CheckSummary) -> list[str]:
     """Return the full report of a check as display lines: each store, then the ledger verdict and the witness note."""
-    lines = [line for r in summary.results for line in [describe(r), *hint_lines(r), *provenance_lines(r)]]
+    lines = [line for r in summary.results for line in [describe(r), *hint_lines(r), *provenance_lines(r), *source_lines(r)]]
     lines.append("  The ledger is intact." if summary.ledger_ok else "  PROBLEM: the ledger failed its integrity check: "
                  + (summary.ledger_problems[0] if summary.ledger_problems else ""))
     if summary.witness_note:
@@ -401,7 +423,7 @@ def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[st
                 continue  # said once when it began, not again at every look
             if not result.quiet:
                 say(f"[{stamp}]{describe(result)}")
-                for line in [*hint_lines(result), *provenance_lines(result)]:
+                for line in [*hint_lines(result), *provenance_lines(result), *source_lines(result)]:
                     say(line)
                 shown = True
         if not summary.ledger_ok:
