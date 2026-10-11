@@ -265,3 +265,24 @@ def test_removing_what_was_never_set_up_is_a_calm_no_op(setup_home):
 
 def test_the_error_type_is_a_memdebug_error():
     assert issubclass(au.AutostartError, MemdebugError) and st.KINDS  # reported by the usual error handling, never a traceback
+
+
+def test_the_service_always_names_the_ledger_even_when_it_is_the_default_one(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    data = tmp_path / "shell-data"  # what only THIS shell's environment says; a service would not see it
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+    monkeypatch.setenv("LOCALAPPDATA", str(data))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(au, "system_name", lambda: "linux")
+    monkeypatch.setattr(au, "default_run", Recorder())
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "a.md").write_text("hello\n", encoding="utf-8")
+    assert runner.invoke(cli.app, ["add", str(notes), "--name", "n"]).exit_code == 0  # no --db: the default ledger
+    assert runner.invoke(cli.app, ["autostart", "install", "--apply", "--yes"]).exit_code == 0
+    text = (home / ".config" / "systemd" / "user" / "memdebug-watch.service").read_text(encoding="utf-8")
+    default_ledger = (data / "memdebug" / "ledger.db").resolve()
+    assert '"--db" ' + au._systemd_quote(str(default_ledger)) in text

@@ -1117,7 +1117,8 @@ def _autostart_plan(db: Optional[Path], every: float) -> autostart.Plan:
     data_dir = ledger_path.parent
     system = autostart.system_name()
     return autostart.make_plan(
-        system, autostart.launch_command(), autostart.watch_arguments(every, data_dir / "watch.log", ledger_path if db is not None else None),
+        # always the ledger itself, even when it is the default one: a service does not see the environment (XDG_DATA_HOME, LOCALAPPDATA) of your shell
+        system, autostart.launch_command(), autostart.watch_arguments(every, data_dir / "watch.log", ledger_path),
         data_dir=data_dir, home=Path.home(), uid=os.getuid() if hasattr(os, "getuid") else 0,
         config_home=Path(os.environ["XDG_CONFIG_HOME"]) if os.environ.get("XDG_CONFIG_HOME", "").startswith("/") else None)
 
