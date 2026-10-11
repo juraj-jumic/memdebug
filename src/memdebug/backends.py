@@ -7,7 +7,7 @@ from .textsafe import safe_text
 
 # Stores that keep no change history of their own: memdebug can only record what it sees between two looks, so it cannot say
 # who made a change or whether it bypassed anything.
-HISTORYLESS = frozenset({"folder", "openwebui"})
+HISTORYLESS = frozenset({"folder", "openwebui", "mcpmemory"})
 
 _OPAQUE = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
 

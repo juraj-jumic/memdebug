@@ -20,15 +20,16 @@ from . import longpath
 from .adapters.base import MemoryAdapter
 from .adapters.folder import FolderAdapter
 from .adapters.markdown_git import MarkdownGitAdapter, _is_reparse_point, _valid_relpath
+from .adapters.mcpmemory import McpMemoryAdapter
 from .adapters.mem0 import Mem0Adapter, build_mem0_memory, validate_scope
 from .adapters.openwebui import OpenWebUIAdapter
 from .docker_source import Docker, copy_database, list_open_webui, valid_container
 from .errors import MemdebugError
 from .textsafe import has_unsafe_chars, safe_text
 
-KINDS = ("markdown", "folder", "mem0", "openwebui")
+KINDS = ("markdown", "folder", "mem0", "openwebui", "mcpmemory")
 KIND_NAMES = {"markdown": "markdown notes in a git repository", "folder": "a folder of markdown notes",
-              "mem0": "self-hosted Mem0", "openwebui": "Open WebUI's memory"}
+              "mem0": "self-hosted Mem0", "openwebui": "Open WebUI's memory", "mcpmemory": "an MCP memory server's file (memory.jsonl)"}
 MAX_SETTINGS_BYTES = 1_000_000
 MAX_STORES = 200
 _NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,39}\Z")
@@ -246,6 +247,9 @@ def open_store(cfg: StoreConfig, *, refresh: bool = True) -> OpenedStore:
     if cfg.kind == "openwebui":
         webui = OpenWebUIAdapter(cfg.path, user_id=cfg.user_id)
         return OpenedStore(webui, webui.scope)
+    if cfg.kind == "mcpmemory":
+        graph = McpMemoryAdapter(cfg.path, store=cfg.name)
+        return OpenedStore(graph, graph.scope)
     scope = validate_scope({k: v for k, v in (("user_id", cfg.user_id), ("agent_id", cfg.agent_id), ("run_id", cfg.run_id)) if v is not None})
     memory, notes = build_mem0_memory(None)
     return OpenedStore(Mem0Adapter(memory, Path(cfg.path)), scope, notes)
@@ -263,6 +267,8 @@ def detect_kind(path: Path) -> str:
         return "markdown" if longpath.exists(path / ".git") else "folder"
     if not stat.S_ISREG(info.st_mode):
         raise SettingsError("that is neither a folder nor a file")
+    if path.suffix.lower() == ".jsonl":  # the MCP memory server's file; the adapter checks the lines when it reads them
+        return "mcpmemory"
     try:
         with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=3)) as db:
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -274,7 +280,7 @@ def detect_kind(path: Path) -> str:
                 return "mem0"
     except sqlite3.Error:
         pass
-    raise SettingsError("that file is not a database memdebug recognises (Open WebUI's webui.db or Mem0's history.db)")
+    raise SettingsError("that file is not one memdebug recognises (Open WebUI's webui.db, Mem0's history.db or an MCP memory server's memory.jsonl)")
 
 
 # -- finding likely stores ---------------------------------------------------------------------------------------------
