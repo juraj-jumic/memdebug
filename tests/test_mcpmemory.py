@@ -278,4 +278,21 @@ def test_a_line_nested_absurdly_deep_costs_one_line_not_the_store(tmp_path):
     path = tmp_path / "memory.jsonl"
     path.write_text(entity("ok") + "\n" + deep + "\n" + entity("also ok") + "\n", encoding="utf-8")
     live = listing(path)
-    assert [m.id for m in live.memories] == ["entity:ok", "entity:also ok"] and not live.complete and "not valid JSON" in live.warnings[0]
+    # Python 3.14 on Linux and macOS can parse this much nesting (it is then a list, not an entity); on Windows the parser gives up. Either way
+    # the line costs one line and the listing says it is incomplete.
+    assert [m.id for m in live.memories] == ["entity:ok", "entity:also ok"] and not live.complete and "line 2" in live.warnings[0]
+
+
+def test_a_parser_that_gives_up_on_deep_nesting_costs_one_line_not_the_store(tmp_path, monkeypatch):
+    real = json.loads
+
+    def gives_up(text):
+        if text.startswith("["):
+            raise RecursionError("maximum recursion depth exceeded")
+        return real(text)
+
+    monkeypatch.setattr("memdebug.textsafe.json.loads", gives_up)  # what the parser does on a platform where the line is too deep for it
+    path = tmp_path / "memory.jsonl"
+    path.write_text(entity("ok") + "\n[[[[\n" + entity("also ok") + "\n", encoding="utf-8")
+    live = listing(path)
+    assert [m.id for m in live.memories] == ["entity:ok", "entity:also ok"] and not live.complete and "line 2 is not valid JSON" in live.warnings[0]
