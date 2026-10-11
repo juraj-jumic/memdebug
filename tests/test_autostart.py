@@ -43,7 +43,9 @@ def test_the_windows_plan_is_a_launcher_script_and_a_per_user_logon_task_with_ev
     p = plan("windows", ["C:\\Program Files\\Py thon\\python.exe", "-m", "memdebug"], tmp=tmp_path)
     [(launcher, text)] = p.files
     assert launcher == tmp_path / "data" / "memdebug-watch.ps1"
-    assert text.splitlines()[1] == "& 'C:\\Program Files\\Py thon\\python.exe' '-m' 'memdebug' 'watch' '--every' '60' '--no-bell' '--log' '/data/watch.log'"
+    lines = text.splitlines()
+    assert lines[1] == f"Set-Location -LiteralPath '{tmp_path / 'data'}'"  # starts in the data folder, where nothing can shadow a Python module
+    assert lines[2] == "& 'C:\\Program Files\\Py thon\\python.exe' '-m' 'memdebug' 'watch' '--every' '60' '--no-bell' '--log' '/data/watch.log'"
     create, run_now = p.steps
     assert create[0] == TOOLS["schtasks"] and create[1:4] == ("/Create", "/TN", "memdebug-watch") and "/RL" in create and "LIMITED" in create and "ONLOGON" in create
     assert create[-1] == f'"{TOOLS["powershell"]}" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{launcher}"'

@@ -1120,6 +1120,7 @@ def _autostart_plan(db: Optional[Path], every: float) -> autostart.Plan:
         # always the ledger itself, even when it is the default one: a service does not see the environment (XDG_DATA_HOME, LOCALAPPDATA) of your shell
         system, autostart.launch_command(), autostart.watch_arguments(every, data_dir / "watch.log", ledger_path),
         data_dir=data_dir, home=Path.home(), uid=os.getuid() if hasattr(os, "getuid") else 0,
+        launcher_dir=default_ledger_path().parent,  # the launcher runs at every login: keep it in the person's own folder, not wherever --db points
         config_home=Path(os.environ["XDG_CONFIG_HOME"]) if os.environ.get("XDG_CONFIG_HOME", "").startswith("/") else None)
 
 

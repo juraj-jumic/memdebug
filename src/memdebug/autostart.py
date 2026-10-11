@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import stat
 import subprocess
 import sys
@@ -76,13 +77,30 @@ def watch_arguments(every: float, log: Path, db: Path | None) -> list[str]:
     return arguments + (["--db", str(db)] if db is not None else [])
 
 
+_POWERSHELL_QUOTES = re.compile("(['\u2018\u2019\u201a\u201b])")  # PowerShell ends a single-quoted string at any of these, not only at '
+
+
 def _powershell_quote(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
+    """One word for a PowerShell script, single-quoted, with every kind of single quote doubled (the only way to write one inside the quotes)."""
+    return "'" + _POWERSHELL_QUOTES.sub(r"\1\1", text) + "'"
 
 
 def _systemd_quote(text: str) -> str:
-    """One word of a systemd ExecStart line: in double quotes, with backslash, quote and percent escaped."""
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
+    """One word of a systemd ExecStart line: in double quotes, with backslash, quote, percent and dollar escaped."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%").replace("$", "$$") + '"'
+
+
+def _systemd_path(text: str) -> str:
+    """A path for a systemd setting that is not a command line: only the percent sign needs escaping."""
+    return text.replace("%", "%%")
+
+
+def _refuse_control_characters(*words: object) -> None:
+    """A newline or other control character in a path or argument could add lines to a service file or script: refuse them all."""
+    for word in words:
+        text = str(word)
+        if any(ord(ch) < 32 or ch in "\x7f\x85\u2028\u2029" for ch in text):
+            raise AutostartError("a path or argument contains a control character, so nothing was set up")
 
 
 def default_tools(system: str) -> dict[str, str]:
@@ -94,27 +112,31 @@ def default_tools(system: str) -> dict[str, str]:
 
 
 def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir: Path, home: Path, uid: int = 0,
-              config_home: Path | None = None, tools: dict[str, str] | None = None) -> Plan:
+              config_home: Path | None = None, tools: dict[str, str] | None = None, launcher_dir: Path | None = None) -> Plan:
     """The plan for a system.
 
     Args:
         system: "windows", "linux" or "macos".
         command: How to start memdebug (see `launch_command`).
         arguments: What to give it (see `watch_arguments`).
-        data_dir: The memdebug data folder, where a Windows launcher file is kept.
+        data_dir: The memdebug data folder (where the ledger is). The watcher starts in it, so nothing in the home folder can shadow a Python module.
         home: The person's home folder.
         uid: The numeric user id (macOS launchctl needs it).
         config_home: Linux only: the configuration folder (`$XDG_CONFIG_HOME`, default `~/.config`).
         tools: The absolute paths of the system programs to run (see `default_tools`).
+        launcher_dir: Windows only: where the launcher script is kept. It runs at every login, so it belongs in a folder only the person can write
+            (the default memdebug data folder under their profile), whatever folder the ledger is in; `data_dir` when omitted.
 
     Raises:
-        AutostartError: If the system is not one of the three.
+        AutostartError: If the system is not one of the three, or a path or argument holds a control character.
     """
     full = [*command, *arguments]
+    _refuse_control_characters(*full, data_dir, home, config_home or "", launcher_dir or "")
     tool = tools or default_tools(system)
     if system == "windows":
-        launcher = data_dir / f"{SERVICE}.ps1"
+        launcher = (launcher_dir or data_dir) / f"{SERVICE}.ps1"
         text = ("# Started at login by 'memdebug autostart install'. Undo with 'memdebug autostart remove'.\r\n"
+                f"Set-Location -LiteralPath {_powershell_quote(str(data_dir))}\r\n"
                 "& " + " ".join(_powershell_quote(part) for part in full) + "\r\n")
         run_line = f'"{tool["powershell"]}" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{launcher}"'
         return Plan(
@@ -130,7 +152,8 @@ def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir
     if system == "linux":
         unit = (config_home or home / ".config") / "systemd" / "user" / f"{SERVICE}.service"
         text = ("[Unit]\nDescription=memdebug watch: record changes to an AI agent's memory\n\n"
-                "[Service]\nExecStart=" + " ".join(_systemd_quote(part) for part in full) + "\nRestart=on-failure\nRestartSec=30\n\n"
+                "[Service]\nWorkingDirectory=" + _systemd_path(str(data_dir)) + "\nExecStart=" + " ".join(_systemd_quote(part) for part in full)
+                + "\nRestart=on-failure\nRestartSec=30\n\n"
                 "[Install]\nWantedBy=default.target\n")
         return Plan(
             "linux",
@@ -144,8 +167,8 @@ def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir
             (tool["systemctl"], "--user", "is-enabled", f"{SERVICE}.service"))
     if system == "macos":
         agent = home / "Library" / "LaunchAgents" / f"{LABEL}.plist"
-        text = plistlib.dumps({"Label": LABEL, "ProgramArguments": full, "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 30,
-                               "ProcessType": "Background"}).decode("utf-8")
+        text = plistlib.dumps({"Label": LABEL, "ProgramArguments": full, "WorkingDirectory": str(data_dir), "RunAtLoad": True, "KeepAlive": True,
+                               "ThrottleInterval": 30, "ProcessType": "Background"}).decode("utf-8")
         return Plan(
             "macos",
             (f"Create a launch agent: {agent}",
@@ -183,7 +206,8 @@ def _write(path: Path, text: str) -> None:
     if not _plain_file(path):
         raise AutostartError(f"{path.name} exists and is not a plain file, so it was not touched")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+    # Windows PowerShell 5.1 reads a script without a byte order mark in the ANSI code page, which turns a name such as "José" into something else
+    with os.fdopen(fd, "w", encoding="utf-8-sig" if path.suffix.lower() == ".ps1" else "utf-8", newline="") as handle:
         handle.write(text)
 
 
