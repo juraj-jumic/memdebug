@@ -25,7 +25,7 @@ from .adapters.mem0 import Mem0Adapter, build_mem0_memory, validate_scope
 from .adapters.openwebui import OpenWebUIAdapter
 from .docker_source import Docker, copy_database, list_open_webui, valid_container
 from .errors import MemdebugError
-from .textsafe import has_unsafe_chars, safe_text
+from .textsafe import has_unsafe_chars, loads_untrusted, safe_text
 
 KINDS = ("markdown", "folder", "mem0", "openwebui", "mcpmemory")
 KIND_NAMES = {"markdown": "markdown notes in a git repository", "folder": "a folder of markdown notes",
@@ -171,7 +171,7 @@ def load_registry(path: Path) -> Registry:
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_size > MAX_SETTINGS_BYTES:
         raise SettingsError("the settings file is not a plain file of reasonable size")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = loads_untrusted(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise SettingsError(f"the settings file is damaged ({safe_text(exc, 80)}); fix or delete {safe_text(path, 120)}") from exc
     if not isinstance(data, dict) or data.get("version") != 1 or set(data) - {"version", "stores", "witness"}:

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .errors import MemdebugError
-from .textsafe import safe_text
+from .textsafe import loads_untrusted, safe_text
 
 VERSION = 1
 FILE_NAME = "status.json"
@@ -123,17 +123,18 @@ def read(path: Path) -> StoredCheck | None:
         raise StatusError("the record of the latest check is not usable")
     try:
         with open(path, "rb") as handle:
-            data = json.loads(handle.read(MAX_BYTES + 1).decode("utf-8"))
+            data = loads_untrusted(handle.read(MAX_BYTES + 1).decode("utf-8"))
     except (OSError, ValueError) as exc:
         raise StatusError("the record of the latest check cannot be read") from exc
     if not isinstance(data, dict) or data.get("version") != VERSION or not isinstance(data.get("stores"), list):
         raise StatusError("the record of the latest check has an unexpected shape")
     try:
-        checked_at = datetime.fromisoformat(str(data["checked_at"]))
-    except (KeyError, ValueError) as exc:
+        parsed = datetime.fromisoformat(str(data["checked_at"]))
+        if parsed.tzinfo is None:
+            raise ValueError("no time zone")
+        checked_at = parsed.astimezone(timezone.utc)  # a date at the edge of the calendar overflows here (OverflowError), so convert now
+    except (KeyError, ValueError, OverflowError) as exc:
         raise StatusError("the record of the latest check has no usable time") from exc
-    if checked_at.tzinfo is None:
-        raise StatusError("the record of the latest check has no usable time")
     stores = []
     for raw in data["stores"][:MAX_STORES]:
         if not isinstance(raw, dict):
@@ -147,6 +148,6 @@ def read(path: Path) -> StoredCheck | None:
             memories=count if isinstance(count, int) and not isinstance(count, bool) and 0 <= count < 10**9 else None))
     problem = data.get("ledger_problem")
     note = data.get("note")
-    return StoredCheck(checked_at=checked_at.astimezone(timezone.utc), ledger_ok=data.get("ledger_ok") is True,
+    return StoredCheck(checked_at=checked_at, ledger_ok=data.get("ledger_ok") is True,
                        ledger_problem=_text(problem, 300) or None if isinstance(problem, str) else None,
                        stores=tuple(stores), note=_text(note, 300) or None if isinstance(note, str) else None)

@@ -1,9 +1,8 @@
 """One-line descriptions of events, shared by the command line and the viewer."""
 from __future__ import annotations
 
-import json
-
 from .models import MemoryEvent
+from .textsafe import loads_untrusted
 
 
 def rollback_details(event: MemoryEvent) -> dict | None:
@@ -11,7 +10,7 @@ def rollback_details(event: MemoryEvent) -> dict | None:
     from .ledger import validate_rollback_details
 
     try:
-        return validate_rollback_details(json.loads(event.after or "{}"))
+        return validate_rollback_details(loads_untrusted(event.after or "{}"))
     except (ValueError, TypeError):
         return None
 
@@ -24,7 +23,7 @@ def describe_event(event: MemoryEvent) -> str:
     """
     if event.op.value == "SNAPSHOT":
         try:
-            info = json.loads(event.after or "{}")
+            info = loads_untrusted(event.after or "{}")
             return f"{event.memory_id.removeprefix('snapshot:')}: {int(info['count'])} memories" + (
                 "" if info.get("complete") else " (listing may be incomplete)")
         except (ValueError, KeyError, TypeError):

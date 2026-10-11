@@ -12,7 +12,6 @@ of a known shape are skipped with a warning and make the listing incomplete. Thi
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import stat
 from pathlib import Path
@@ -20,7 +19,7 @@ from pathlib import Path
 from .. import longpath
 from ..errors import AdapterError
 from ..models import MAX_ID_CHARS, Memory, MemoryEvent
-from ..textsafe import bound_text, safe_text
+from ..textsafe import bound_text, loads_untrusted, safe_text
 from .base import HistoryRead, LiveMemories
 from .common import Warnings, require_regular_file
 
@@ -128,7 +127,7 @@ class McpMemoryAdapter:
             warnings.add(f"line {number} is too long and was skipped")
             return None
         try:
-            data = json.loads(line)
+            data = loads_untrusted(line)
         except (ValueError, RecursionError):  # a line nested thousands of levels deep must cost one line, not the whole store
             warnings.add(f"line {number} is not valid JSON and was skipped")
             return None

@@ -17,7 +17,6 @@ Mem0 facts this relies on (2.2.1):
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sqlite3
@@ -31,7 +30,7 @@ from pydantic import ValidationError
 
 from ..errors import AdapterError, MemdebugError, UnsupportedSchemaError
 from ..models import MAX_ID_CHARS, Memory, MemoryEvent, Op, Source
-from ..textsafe import bound_text, safe_text
+from ..textsafe import bound_text, loads_untrusted, safe_text
 from .base import HistoryRead, LiveMemories
 from .common import Warnings as _Warnings
 from .common import clean_id as _clean_id
@@ -350,7 +349,7 @@ def _load_json_config(path: Path) -> dict[str, Any]:
     if resolved.stat().st_size > _MAX_CONFIG_BYTES:
         raise AdapterError("mem0 config file is too large")
     try:
-        config = json.loads(resolved.read_text(encoding="utf-8"))
+        config = loads_untrusted(resolved.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise AdapterError("mem0 config file is not valid JSON") from exc
     if not isinstance(config, dict):

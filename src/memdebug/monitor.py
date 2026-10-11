@@ -427,6 +427,22 @@ def baseline(store: StoreConfig, ledger: Ledger, label: str = "baseline", *, ref
     return info.id
 
 
+def _reconfigured(before: Registry, after: Registry) -> list[str]:
+    """Names of stores that are in both lists but are now set up differently (another path, user, files...)."""
+    old = {s.name: s for s in before.stores}
+    return sorted(s.name for s in after.stores if s.name in old and old[s.name] != s)
+
+
+def _list_change(before: Registry, after: Registry) -> str:
+    """Say in words what changed in the list of watched stores, naming the stores (their names are plain by construction)."""
+    old, new = {s.name for s in before.stores}, {s.name for s in after.stores}
+    parts = []
+    for label, names in (("now watching", sorted(new - old)), ("NO LONGER WATCHING", sorted(old - new)), ("set up differently", _reconfigured(before, after))):
+        if names:
+            parts.append(f"{label} {', '.join(safe_text(n, 40) for n in names[:5])}" + (f" and {len(names) - 5} more" if len(names) > 5 else ""))
+    return "The list of watched stores changed: " + "; ".join(parts or ["its order or other details"]) + f" ({len(after.stores)} store(s))."
+
+
 # -- watch -----------------------------------------------------------------------------------------------------------------
 
 def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[str], None], ring: Callable[[], None] = lambda: None,
@@ -450,7 +466,9 @@ def watch(registry: Registry, ledger: Ledger, *, every: float, say: Callable[[st
             except MemdebugError:
                 fresh = registry
             if fresh.stores != registry.stores:
-                say(f"The list of watched stores changed: now {len(fresh.stores)} store(s).")
+                say(f"[{clock().astimezone().strftime('%H:%M:%S')}]  {_list_change(registry, fresh)}")
+                if {s.name for s in registry.stores} - {s.name for s in fresh.stores} or _reconfigured(registry, fresh):
+                    ring()  # a store that is no longer watched, or watched differently, is what someone hiding a change would do: not a quiet line
             registry = fresh
         summary = check_all(registry, ledger, settle=settle, ledger_path=ledger_path)
         stamp = clock().astimezone().strftime("%H:%M:%S")

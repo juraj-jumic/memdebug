@@ -16,7 +16,6 @@ Logs are only read, never followed through a link, and read within fixed limits;
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import stat
@@ -27,6 +26,7 @@ from pathlib import Path
 
 from . import longpath
 from .adapters.markdown_git import _is_reparse_point, _valid_relpath
+from .textsafe import loads_untrusted
 
 MAX_PROJECT_FOLDERS = 1000
 MAX_LOG_FILES = 500
@@ -279,7 +279,7 @@ def find_writers(path: str | os.PathLike[str] | Sequence[str], start: datetime, 
                 if b'"tool_use"' not in line:  # cheap test first: most lines are not tool calls
                     continue
                 try:
-                    record = json.loads(line)
+                    record = loads_untrusted(line)
                 except (ValueError, RecursionError):
                     continue
                 for session, uuid, at, tool, given in _calls(record):

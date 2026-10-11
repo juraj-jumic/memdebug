@@ -39,7 +39,7 @@ from .models import (
     Trust,
     derive_trust,
 )
-from .textsafe import has_unsafe_chars
+from .textsafe import has_unsafe_chars, loads_untrusted
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +313,7 @@ class Ledger:
                 self._db.execute("ALTER TABLE events ADD COLUMN trust TEXT")
                 for seq, payload in self._db.execute("SELECT seq, payload FROM events").fetchall():
                     try:
-                        data = json.loads(payload)
+                        data = loads_untrusted(payload)
                         values = (data.get("op"), data.get("trust"), seq)
                     except (ValueError, AttributeError):
                         continue  # left empty; verify reports it
@@ -550,14 +550,14 @@ class Ledger:
         op_col: str | None, trust_col: str | None, recorded: dict[str, dict], deleted: set[str],
     ) -> None:
         try:
-            data = json.loads(payload)
+            data = loads_untrusted(payload)
             op = data.get("op")
             expected_snap = None
             if op in (Op.SNAPSHOT.value, Op.SNAPSHOT_DELETED.value):
                 sid = str(data.get("memory_id", "")).removeprefix("snapshot:")
                 expected_snap = f"{op}:{sid}"
                 if op == Op.SNAPSHOT.value:
-                    recorded[sid] = json.loads(data["after"])
+                    recorded[sid] = loads_untrusted(data["after"])
                 else:
                     deleted.add(sid)
             elif op == Op.ROLLBACK.value:
@@ -565,7 +565,7 @@ class Ledger:
                 if not re.match(r"^rollback:r[1-9][0-9]{0,8}\Z", rid):
                     raise ValueError("bad rollback id")
                 expected_snap = f"{op}:{rid}"
-                validate_rollback_details(json.loads(data["after"]))
+                validate_rollback_details(loads_untrusted(data["after"]))
             if (data.get("backend") != backend or data.get("backend_ref") != ref or snap != expected_snap
                     or data.get("op") != op_col or data.get("trust") != trust_col):
                 result.problems.append(f"seq {seq} index columns do not match its content")
@@ -621,9 +621,9 @@ class Ledger:
             raise SnapshotError(f"snapshot {sid} does not exist")
         backend, scope_json, taken_at, ledger_seq, ledger_head, complete, label, count, stored = row
         try:
-            scope = json.loads(scope_json)
+            scope = loads_untrusted(scope_json)
             entries = [
-                [mid, h, json.loads(sc)]
+                [mid, h, loads_untrusted(sc)]
                 for mid, h, sc in self._db.execute(
                     "SELECT memory_id, hash, scope FROM snapshot_entries WHERE snapshot_id = ?", (number,)
                 )
@@ -718,7 +718,7 @@ class Ledger:
             "SELECT payload FROM events WHERE snap = ?", (f"{Op.SNAPSHOT.value}:{info.id}",)
         ).fetchone()
         try:
-            chained = json.loads(json.loads(record[0])["after"])["hash"] if record else None
+            chained = loads_untrusted(loads_untrusted(record[0])["after"])["hash"] if record else None
         except (ValueError, KeyError, TypeError):
             chained = None
         if chained != digest:
@@ -737,7 +737,7 @@ class Ledger:
                     raise SnapshotError(f"snapshot {info.id} contains a text that was changed")
                 texts[digest_] = text
         try:
-            memories = [Memory(id=mid, text=texts[h], scope=json.loads(sc)) for mid, h, sc in entries]
+            memories = [Memory(id=mid, text=texts[h], scope=loads_untrusted(sc)) for mid, h, sc in entries]
         except KeyError as exc:
             raise SnapshotError(f"snapshot {info.id} is missing a stored text") from exc
         except (ValueError, ValidationError) as exc:

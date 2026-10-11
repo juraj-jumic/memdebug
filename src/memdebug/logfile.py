@@ -2,6 +2,7 @@
 
 Every line is cleaned like everything else memdebug shows (a memory's words are untrusted), the file is private to the user where the system
 allows it, and it never grows without bound: past a size limit it is renamed to `<name>.1` (replacing the previous one) and a new file starts.
+If that rename is impossible (on Windows, another program may have the log open) the line is still written, so logging never goes silent.
 """
 from __future__ import annotations
 
@@ -27,20 +28,31 @@ class LogFile:
         self.path = Path(path)
         self._max = max_bytes
 
+    def _rotate_if_needed(self) -> bool:
+        """Rename a file that has grown too large. Returns False if the path holds something that is not a plain file (then nothing is written)."""
+        try:
+            info = os.lstat(self.path)
+        except FileNotFoundError:
+            return True
+        if not stat.S_ISREG(info.st_mode):  # a link or a folder is never written into
+            return False
+        if info.st_size > self._max:
+            try:
+                os.replace(self.path, self.path.with_name(self.path.name + ".1"))
+            except OSError:
+                pass  # for example the file is open in another program: keep appending to it instead of going silent
+        return True
+
     def __call__(self, line: str) -> None:
         """Write one line (cleaned and shortened). Returns nothing; errors are swallowed."""
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                info = os.lstat(self.path)
-                if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-                    return  # never write through a link or into something that is not a plain file
-                if info.st_size > self._max:
-                    os.replace(self.path, self.path.with_name(self.path.name + ".1"))
-            except FileNotFoundError:
-                pass
-            fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            if not self._rotate_if_needed():
+                return
+            flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)  # never follow a link that appeared since the check
+            fd = os.open(self.path, flags, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(safe_text(line, MAX_LINE) + "\n")
+                if stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                    handle.write(safe_text(line, MAX_LINE) + "\n")
         except OSError:
             return

@@ -27,7 +27,7 @@ from pathlib import Path
 from .adapters.markdown_git import _is_reparse_point
 from .errors import MemdebugError
 from .ledger import Ledger
-from .textsafe import safe_text
+from .textsafe import loads_untrusted, safe_text
 
 MAX_WITNESS_BYTES = 16 * 1024 * 1024
 MAX_LINE_BYTES = 1024
@@ -134,7 +134,7 @@ def read_witness(path: Path) -> tuple[list[WitnessLine], list[str]]:
             problems.append(f"witness line {number} is too long")
             break
         try:
-            data = json.loads(line)
+            data = loads_untrusted(line)
         except ValueError:
             problems.append(f"witness line {number} is not valid")
             break

@@ -98,7 +98,7 @@ def test_a_store_added_while_watching_is_picked_up_and_announced(tmp_path):
 
     said = run_watch(st.Registry([cfg]), ledger, cycles=3, sleep=sleep, reload=lambda: current["value"])
     text = "\n".join(said)
-    assert "The list of watched stores changed: now 2 store(s)." in text and "other" in text and "edited" in text
+    assert "The list of watched stores changed: now watching other (2 store(s))." in text and "edited" in text
 
 
 def test_a_settings_file_that_cannot_be_read_at_that_moment_keeps_the_previous_list(tmp_path):
@@ -168,3 +168,90 @@ def test_the_watch_command_gives_the_watcher_a_way_to_read_the_store_list_again(
     (other / "x.md").write_text("x\n", encoding="utf-8")
     assert runner.invoke(cli.app, ["add", str(other), "--name", "second", "--db", str(db)]).exit_code == 0
     assert [s.name for s in reload().stores] == ["first", "second"]  # read from the settings file each time it is called
+
+
+def test_a_rotation_that_fails_does_not_stop_the_logging(tmp_path, monkeypatch):
+    log = LogFile(tmp_path / "w.log", max_bytes=50)
+    for i in range(10):
+        log(f"line {i} " + "x" * 20)
+    real = os.replace
+
+    def refused(src, dst):
+        raise PermissionError("the file is open in another program")
+
+    monkeypatch.setattr(os, "replace", refused)
+    log("after the rotation became impossible")
+    assert "after the rotation became impossible" in (tmp_path / "w.log").read_text(encoding="utf-8")
+    monkeypatch.setattr(os, "replace", real)
+
+
+def test_what_is_opened_for_the_log_must_still_be_a_plain_file_when_written(tmp_path, monkeypatch):
+    target = tmp_path / "w.log"
+    target.write_text("old\n", encoding="utf-8")
+    real = os.fstat
+    import stat as _stat
+
+    def pretend_not_a_file(fd):
+        result = real(fd)
+        fields = list(result)
+        fields[0] = _stat.S_IFLNK | 0o777  # what the opened thing turns out to be, whatever the path said earlier
+        return os.stat_result(fields)
+
+    monkeypatch.setattr(os, "fstat", pretend_not_a_file)
+    LogFile(target)("must not be written")
+    monkeypatch.setattr(os, "fstat", real)
+    assert target.read_text(encoding="utf-8") == "old\n"
+
+
+# -- a store dropped from the list must not go unnoticed (found by the security review before 1.0) ----------------------------------
+
+def two_stores(tmp_path):
+    folder, ledger, first = make_watch(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "x.md").write_text("one\n", encoding="utf-8")
+    second = st.StoreConfig("other", "folder", str(other))
+    mon.baseline(second, ledger)
+    return ledger, first, second
+
+
+def watch_with_lists(ledger, lists):
+    """Run watch over the given store lists, one per look; return what it said and how many times it rang the bell."""
+    said, rang = [], []
+    steps = iter(lists)
+    current = {"value": lists[0]}
+
+    def sleep(seconds):
+        current["value"] = next(steps, current["value"])
+
+    next(steps)
+    mon.watch(lists[0], ledger, every=5, say=said.append, ring=lambda: rang.append(1), cycles=len(lists), sleep=sleep, settle=0, reload=lambda: current["value"])
+    return said, rang
+
+
+def test_a_store_dropped_from_the_list_is_named_and_rings_the_bell(tmp_path):
+    ledger, first, second = two_stores(tmp_path)
+    said, rang = watch_with_lists(ledger, [st.Registry([first, second]), st.Registry([first])])
+    text = "\n".join(said)
+    assert "NO LONGER WATCHING other" in text and "(1 store(s))" in text and rang == [1]
+
+
+def test_a_store_that_is_now_set_up_differently_is_named_and_rings_the_bell(tmp_path):
+    ledger, first, second = two_stores(tmp_path)
+    moved = st.StoreConfig("other", "folder", str(tmp_path / "somewhere-else"), subdir="x")
+    said, rang = watch_with_lists(ledger, [st.Registry([first, second]), st.Registry([first, moved])])
+    assert "set up differently other" in "\n".join(said) and rang == [1]
+
+
+def test_only_a_new_store_is_announced_without_ringing(tmp_path):
+    ledger, first, second = two_stores(tmp_path)
+    said, rang = watch_with_lists(ledger, [st.Registry([first]), st.Registry([first, second])])
+    assert "now watching other" in "\n".join(said) and rang == []
+
+
+def test_the_names_in_the_announcement_are_cleaned():
+    # names are validated when the settings file is read, but a name built any other way must still not reach the terminal raw
+    before = st.Registry([st.StoreConfig("a\x1b[2J", "folder", "/x")])
+    after = st.Registry([st.StoreConfig("b\x07", "folder", "/y")])
+    text = mon._list_change(before, after)
+    assert "now watching b" in text and "NO LONGER WATCHING a" in text and "\x1b" not in text and "\x07" not in text

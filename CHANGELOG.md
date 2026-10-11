@@ -26,6 +26,17 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 - **docs/stability.md says what is stable from 1.0** (commands, exit codes, the JSON and SARIF reports, the settings file, the witness file, the backup folder names and the ledger), what is not,
   and how the ledger stays readable. It includes a ten-line script that checks a ledger's hash chain with nothing but Python's standard library.
 
+### Security (found by an independent review of this release's new code, before 1.0)
+- The MCP memory file reader split lines on characters that the server does not (U+2028, U+2029 and U+0085, which `JSON.stringify` writes raw), so an entity containing one was skipped and the
+  store looked permanently "not read in full". It now splits on the newline only.
+- The Windows launcher script is written with a byte order mark (PowerShell 5 read it in the ANSI code page, mangling names such as "José"), and every kind of single quote, including the curly ones
+  PowerShell treats as quotes, is doubled. Its quoting is now checked by PowerShell's own parser in the tests. The launcher is always kept in your own memdebug folder, not beside a ledger on
+  a shared drive, and the watcher starts in the data folder. The generated command always names the exact ledger. systemd's `$` is escaped, and a control character in any path or argument refuses the plan.
+- JSON nested thousands of levels deep no longer crashes the readers of the settings file, the status record, Open WebUI's `meta`, the MCP memory file or the ledger's own text (one helper, `loads_untrusted`);
+  a status record with a date at the edge of the calendar is unusable instead of a server error.
+- A running `watch` now names stores that were added, removed or set up differently when it re-reads the list, and rings the bell for the last two. Log rotation that fails on Windows (the log open in
+  another program) no longer silences the log, and the log is opened without following a link. Relocation variables that hold a network or device path are refused.
+
 ### Changed
 - Gemini CLI is described as it is now: its old `save_memory` tool, which appended a heading to `GEMINI.md`, is gone from recent versions; the model edits the file like any other. Codex CLI's
   optional memory feature is described too.

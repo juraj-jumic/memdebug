@@ -10,7 +10,6 @@ copy of the database, not the live file inside the container.
 from __future__ import annotations
 
 import bisect
-import json
 import re
 import sqlite3
 from contextlib import closing
@@ -20,7 +19,7 @@ from typing import Callable
 
 from ..errors import AdapterError
 from ..models import Memory, MemoryEvent, Source, SourceKind
-from ..textsafe import bound_text, safe_text
+from ..textsafe import bound_text, loads_untrusted, safe_text
 from .base import HistoryRead, LiveMemories
 from .common import Warnings, clean_id, decode, require_regular_file
 
@@ -190,7 +189,7 @@ class OpenWebUIAdapter:
         data = None
         if isinstance(meta, str) and len(meta) <= 20_000:
             try:
-                data = json.loads(meta)
+                data = loads_untrusted(meta)
             except ValueError:
                 data = None
         label = _plain(data.get("created_by")) if isinstance(data, dict) else None

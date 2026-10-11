@@ -189,8 +189,10 @@ def _is_plain_file(path: Path) -> bool:
 
 
 def _usable_env_path(value: object) -> bool:
-    """Whether an environment variable holds a plain absolute path worth following: not empty, not huge, no control characters."""
-    return isinstance(value, str) and 0 < len(value) <= MAX_ENV_PATH and not has_unsafe_chars(value) and Path(value).is_absolute()
+    """Whether an environment variable holds a plain local absolute path worth following: not empty, not huge, no control characters, not a network or device path."""
+    if not (isinstance(value, str) and 0 < len(value) <= MAX_ENV_PATH and not has_unsafe_chars(value) and Path(value).is_absolute()):
+        return False
+    return not value.startswith(("\\\\", "//"))  # UNC and device paths (\\host\share, \\.\...): looking at them would reach out over the network
 
 
 def _locate(root: Path, variables: Mapping[str, str], agent: Agent, parts: tuple[str, ...]) -> Path:

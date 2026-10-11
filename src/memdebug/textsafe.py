@@ -9,9 +9,26 @@ agent read. Two rules follow:
 from __future__ import annotations
 
 import hashlib
+import json
 import unicodedata
+from typing import Any
 
 MAX_TEXT_CHARS = 100_000
+
+
+def loads_untrusted(text: str | bytes) -> Any:
+    """`json.loads` for text that came from outside memdebug.
+
+    A document nested thousands of levels deep makes the standard parser raise `RecursionError`, which is not a `ValueError`, so a reader that
+    only expects "this is not valid JSON" would crash on it. Here that case is a `ValueError` like any other invalid document.
+
+    Raises:
+        ValueError: If the text is not valid JSON, or is nested too deeply to parse.
+    """
+    try:
+        return json.loads(text)
+    except RecursionError as exc:
+        raise ValueError("JSON nested too deeply") from exc
 
 _NAMED = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
 _BIDI = set("\u200e\u200f\u061c\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
