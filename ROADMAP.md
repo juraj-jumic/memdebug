@@ -3,15 +3,16 @@
 Where memdebug is and where it is going. It is alpha software: the pieces below that are built work and are tested,
 but expect rough edges and breaking changes before 1.0. Order is a plan, not a promise.
 
-## Built (0.6)
+## Built (1.0)
 
 * Tamper-evident ledger (hash chain) with `verify`, snapshots whose content is chained in, and compare.
 * **Witness:** a second copy of the ledger's head kept elsewhere, so a rewritten or cut-short ledger is noticed.
-* Stores: markdown in a git repository, plain folders of markdown, Open WebUI's memory (copied from its Docker container, or from a copy you
-  made),
+* Stores: markdown in a git repository, plain folders of markdown or text notes, Open WebUI's memory (copied from its Docker container, or from a copy you
+  made), the official MCP memory server's `memory.jsonl` (each entity and relation one memory),
   and self-hosted Mem0 (2.2.1). All read-only. Stores without a history record what is seen between looks.
-* **An agent catalog:** `memdebug agents` and `setup` recognise Claude Code, OpenClaw, Gemini CLI, Codex CLI, Windsurf, Cline and Open WebUI in
-  Docker, with locations taken from their documentation (see docs/agents.md).
+* **An agent catalog:** `memdebug agents` and `setup` recognise Claude Code, OpenClaw, Gemini CLI, Codex CLI, Windsurf, Cline, Roo Code, Hermes Agent, Goose,
+  GitHub Copilot CLI, Zed, Basic Memory and Open WebUI in Docker, with locations taken from their documentation or source and a plain statement of which were tried
+  on a real installation (see docs/agents.md), and the variables that move an agent's folder honoured.
 * **A registry of stores and guided use:** `setup` (finds likely memory, asks first), `add`, `stores`, `remove`, `check`
   (exit code 1 when something needs a look or a note could not be read), `status`, `watch`.
 * Detection of changes that bypassed a store's own history, with false-alarm guards.
@@ -25,7 +26,12 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
   session logs, as evidence and never proof. Changes made by shell commands cannot be matched, so they are only counted.
 * **Hints** ("worth a second look"): heuristics for instructions to send data, remove confirmation or weaken safeguards,
   hidden characters and secret-like strings. Labelled as guesses; secrets are never repeated.
-* A read-only browser viewer: timeline, redlined changes, snapshots, compare, the agents it found, integrity, light and dark.
+* A read-only browser viewer: timeline, redlined changes, snapshots, compare, the agents it found, **the status of the latest check (including a warning when a
+  store was not read in full)**, integrity, light and dark.
+* **A background watcher:** `memdebug autostart` sets up `watch` to run from login (a scheduled task, a systemd user service or a launch agent), shown first and
+  applied only with `--apply`; `watch --log` keeps a small log, and the watcher reads its store list again before every look.
+* **Stability:** docs/stability.md says what is stable; ledgers written by real releases 0.2.0 to 0.6.1 are tested against the current code, the hash format and
+  every promised format are pinned by tests, and the JSON report carries a schema version.
 * **Windows paths over 259 characters** are read, checked, rolled back and backed up without changing any Windows setting.
 * **Rollback for markdown/git:** dry run first, exact bytes, backups of anything git does not hold, no rewritten
   history, undo on failure, recorded in the ledger, and itself undoable.
@@ -34,22 +40,19 @@ but expect rough edges and breaking changes before 1.0. Order is a plan, not a p
 
 ## Next, roughly in this order
 
-1. **Rollback for plain folders: built** (see Built). Still to do: trying it on real agent memory folders.
-2. **More provenance.** First slices exist for Open WebUI (the app's own label and how close a chat was) and for Claude Code (which logged Write or Edit
-   call wrote a flagged note). Still to do: which conversation turn wrote a memory and what the assistant had just read, showing it in the viewer
-   (which would have to read `stores.json`), and readers for other agents' session logs (OpenClaw).
-   The earlier plan, in full: **Provenance from session logs.** Which conversation turn wrote a memory, and whether it came from the user or from
-   something the agent read. This turns a change log into an incident-response tool. It needs a reader per agent (first
-   candidates: Open WebUI chat records, Claude Code session transcripts), and depends on seeing real log formats.
-3. **More agents,** each added only once its memory location is documented. Cline is in. Left: Goose (its memory is `.txt` files, which the folder
-   reader does not read, and its Windows location is unconfirmed) and Continue (its global rules folder is not in its official documentation).
-   Cursor and Aider keep nothing under the home folder to watch, and Claude Desktop's memory is in the cloud.
-4. **Releases.** 0.2.0 was published to GitHub and PyPI on 2026-10-07 through the tag-triggered workflow (PyPI trusted publishing, with a
-   required approval and provenance attestations). The install from PyPI has been checked in a clean Linux environment and on Windows 11 (pipx, Python 3.14); macOS
-   still needs the same check. Still to do: signed release notes and a smoother route for people without Python (item 5).
-5. **Better setup for non-advanced users:** stand-alone programs (no Python) are built for Windows, Linux and macOS and attached to each release (not signed). Still to do:
-   a signed Windows installer, and a way to keep `watch` running without a terminal.
-6. **Viewer:** filter by store, show hints in the overview, a status page that matches `memdebug status`.
+memdebug 1.0 means the interfaces in [docs/stability.md](docs/stability.md) are stable, not that everything is finished. What is still open:
+
+1. **Reading only what is new in a long git history.** A git store beyond 100,000 file changes or 100,000,000 characters of edits is only partly read, and
+   `check` says so loudly ("NOT READ IN FULL") instead of calling it quiet; reading just the commits since the last look is not built.
+2. **Trying things on real installations.** Only Claude Code (Windows 11) and Open WebUI (Docker) have been tried by a person. The other catalog entries follow documentation
+   or source code (see docs/agents.md); the background watcher's Linux and macOS forms, and the Windows one on a real computer, are tested only as plans and commands;
+   the Linux and macOS programs are tested by CI only. Reports from people who use these are the most useful thing anyone can give the project.
+3. **More provenance.** Which conversation turn wrote a memory and what the assistant had just read; Open WebUI's label cannot tell the assistant's own writes from a person's
+   (newer versions record the model and chat for the `update_memory` tool, which is shown). Session-log readers for agents other than Claude Code (OpenClaw).
+4. **More agents,** each added only once its memory location is documented. Not yet: Continue and Cursor (nothing under the home folder), the VS Code Copilot memory tool and the
+   Antigravity CLI (paths unverified), Zed's Rules Library and LibreChat (databases).
+5. **Releases.** A signed Windows program (not now: see docs/windows.md for why unsigned programs warn), and a check of the install on macOS.
+6. **Viewer:** filter by store and hints in the overview.
 
 ## Later, maybe
 

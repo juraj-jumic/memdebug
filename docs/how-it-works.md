@@ -41,7 +41,7 @@ writes, from outside (and, for Claude Code, its session logs, read-only, only to
                                        |  writes its memory
                                        v
         +--------------------------- memory store ---------------------------+
-        |  markdown notes in git  |  plain folder  |  Open WebUI  |  Mem0     |
+        |  markdown notes in git  |  plain folder  |  Open WebUI  |  Mem0  |  MCP memory file  |
         +------------------------------------+------------------------------+
                                              |  read-only readers: nothing the store holds is executed
                                              v
@@ -70,7 +70,7 @@ writes, from outside (and, for Claude Code, its session logs, read-only, only to
               the only code that writes to a memory store: git notes and plain folders, never databases
 ```
 
-memdebug's own files (the ledger, the list of watched stores, folder-rollback backups, copies of Open WebUI's database) live in its own data
+memdebug's own files (the ledger, the list of watched stores, the record of the latest check, the watch log, folder-rollback backups, copies of Open WebUI's database) live in its own data
 folder, or where you point `--db`, `--out` or `--file`; memdebug does not write them inside a store. For Claude Code, `check` and `watch` also read
 its session logs (read-only, ids and times only) to say which session logged an edit to a flagged note: evidence, not proof.
 

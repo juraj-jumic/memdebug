@@ -3,6 +3,39 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
+## [Unreleased]
+
+### Added
+- **A Status page in the viewer, and a warning on its front page.** `check` and `watch` now leave a small `status.json` next to the ledger (written atomically, never through a
+  link), and the viewer shows it: each store's state in the same words `check` printed, when the check was made, and a banner on the front page when a store was **not read in
+  full**, could not be checked, or changed outside its history. Before, the viewer read only the ledger and could not say any of that. The page says when there is no record, when it
+  cannot be used and when it is old; everything read back is cleaned again and escaped. The record is a convenience, not evidence, and is not chained into the ledger.
+- **Keep `watch` running without a terminal: `memdebug autostart install | status | remove`.** It shows exactly what it would create and run, and does nothing without `--apply` (and a
+  confirmation): a per-user scheduled task on Windows, a systemd user service on Linux, a launch agent on macOS. No administrator rights, no shell, the system programs found by absolute
+  path, undone exactly by `remove`. `watch --log FILE` keeps a small private log (rotated at about 1 MB), and `watch` now reads the list of stores again before every look, so a store added
+  later is picked up, and says a failing ledger once instead of at every look. The plans and commands are tested with a recorder; the real forms have not yet been applied on a real computer.
+- **A new store type: the official MCP memory server's `memory.jsonl`** (`memdebug add path/to/memory.jsonl`). Each entity and each relation is one memory, so a change shows as an entity
+  added, edited or removed. The file is read safely: only that one path, never through a link, at most 20 MB, bad lines skipped with a warning and the listing marked incomplete.
+- **Folder stores can watch `.txt` notes** (`memdebug add FOLDER --suffix .txt`), which is how Goose keeps its memory.
+- **A bigger agent catalog, each entry from the agent's documentation or source** and with a plain statement of how sure it is (docs/agents.md): Claude Code's `rules/` and per-subagent
+  `agent-memory/`, Gemini CLI's private per-project memory notes, Codex CLI's generated `memories/`, Cline's `~/.cline/rules`, and new entries for Roo Code, Hermes Agent, Goose, GitHub Copilot
+  CLI, Zed and Basic Memory. The variables that move an agent's folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `OPENCLAW_STATE_DIR`, `OPENCLAW_WORKSPACE_DIR`) are honoured for a real
+  run, when they hold a plain absolute path. Only Claude Code and Open WebUI have been tried on a real installation; the rest follow the documentation.
+- **More evidence for Open WebUI memories written by its `update_memory` tool:** the model and the recorded chat and message ids (said to exist, never copied).
+- **The JSON report carries `schema_version`** (1).
+- **docs/stability.md says what is stable from 1.0** (commands, exit codes, the JSON and SARIF reports, the settings file, the witness file, the backup folder names and the ledger), what is not,
+  and how the ledger stays readable. It includes a ten-line script that checks a ledger's hash chain with nothing but Python's standard library.
+
+### Changed
+- Gemini CLI is described as it is now: its old `save_memory` tool, which appended a heading to `GEMINI.md`, is gone from recent versions; the model edits the file like any other. Codex CLI's
+  optional memory feature is described too.
+- `memdebug add` checks a new store with the same rules the settings file gets when it is read back, so a bad value is refused at once and can never be saved and break the file.
+
+### Compatibility
+- Ledgers written by the real releases 0.2.0, 0.3.0, 0.4.1 and 0.6.1 are now part of the test suite: each is opened, verified, read, reported on and appended to by the current code. The hash
+  format, the text that is hashed, the operation names, the witness line format, the backup folder names, the SARIF rule ids, the settings file version, the commands and the exit codes are
+  pinned by tests, so changing one is a decision made on purpose.
+
 ## [0.6.2] - 2026-10-11
 
 ### Added

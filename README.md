@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/juraj-jumic/memdebug)](LICENSE)
 
 **See what your AI agent's memory holds, what changed, and put it back.** A local, agent-neutral tool for people who run
-agents whose memory they can reach: notes in a folder or git repository, Open WebUI's memory, or a self-hosted Mem0.
+agents whose memory they can reach: notes in a folder or git repository, Open WebUI's memory, an MCP memory server's file, or a self-hosted Mem0.
 
 ![memdebug demo: an edit that bypassed git is caught and undone without losing anything, and a tampered copy of the record is detected](docs/demo.gif)
 
@@ -66,6 +66,7 @@ You point memdebug at the memory; it does not hook into the agent.
     memdebug check       # looks for changes once; exit code 1 means something needs a look or a note could not be read
     memdebug watch       # keeps looking and says so when something changes (Ctrl+C to stop)
     memdebug serve       # the same story in your browser, read-only
+    memdebug autostart install   # keeps `watch` running from login on, so a change made and undone while you were away is still seen
 
 If something looks wrong, put it back:
 
@@ -83,6 +84,7 @@ anything it could not prove. Treat the ledger as sensitive: it contains your age
 * [docs/agents.md](docs/agents.md): which agents it knows and where each keeps its memory. [docs/windows.md](docs/windows.md): Windows notes.
 * [docs/open-webui-tools.md](docs/open-webui-tools.md): why an Open WebUI model may never save a memory, and an example router that fixes it.
 * [docs/threat-model.md](docs/threat-model.md): what is defended, against whom, and the known limits.
+* [docs/stability.md](docs/stability.md): what is stable from 1.0, and how the ledger stays readable across versions.
 * [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [docs/releasing.md](docs/releasing.md).
 * [SECURITY.md](SECURITY.md): how to report a problem. [CONTRIBUTING.md](CONTRIBUTING.md): how to help.
 
