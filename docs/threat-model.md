@@ -176,7 +176,7 @@ simulation, but real junctions are only tested on Windows runs of the suite.
 
 ## Known limits
 
-Read these. They are why this is alpha software.
+Read these before relying on memdebug: they are what it does not do.
 
 * **A git store with a very long history is only partly read.** memdebug reads at most 100,000 file changes and 100,000,000 characters of old and new text of a
   git store's history, oldest first, on every look. Every edit counts both its old and its new text, so a 20 KB note edited 2,500 times reaches the text limit

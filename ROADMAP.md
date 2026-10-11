@@ -1,7 +1,7 @@
 # Roadmap
 
-Where memdebug is and where it is going. It is alpha software: the pieces below that are built work and are tested,
-but expect rough edges and breaking changes before 1.0. Order is a plan, not a promise.
+Where memdebug is and where it is going. The pieces below that are built work and are tested; the interfaces in docs/stability.md are stable from 1.0.
+Order is a plan, not a promise.
 
 ## Built (1.0)
 

@@ -1,9 +1,14 @@
 # Changelog
 
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
-(alpha: anything may change before 1.0).
+(from 1.0.0 the interfaces listed in [docs/stability.md](docs/stability.md) are stable).
 
-## [Unreleased]
+## [1.0.0] - 2026-10-11
+
+Memdebug 1.0 is a promise of stability, not a claim that everything is finished: the commands, exit codes, reports, settings file, witness file and ledger described in
+[docs/stability.md](docs/stability.md) now follow Semantic Versioning, and ledgers written by every earlier release are tested to keep working. Only Claude Code (Windows 11) and Open WebUI (Docker) have been
+tried on a real installation by a person; every other agent follows its own documentation (docs/agents.md says which is which), and the Linux and macOS programs and the background watcher's
+real system forms have only been tested by CI, in WSL and with recorded commands.
 
 ### Added
 - **A Status page in the viewer, and a warning on its front page.** `check` and `watch` now leave a small `status.json` next to the ledger (written atomically, never through a
