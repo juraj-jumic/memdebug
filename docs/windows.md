@@ -21,7 +21,7 @@ it cannot prove (for example symlinks need Developer Mode).
   The warning is about the missing signature, not about what the program does. (A copy fetched with `gh release download` started here without it.)
 - If git reports "dubious ownership" for a repository on another drive, fix the ownership; this tool deliberately ignores your
   global `safe.directory` setting.
-- `memdebug autostart install --apply` creates a launcher script `memdebug-watch.ps1` in `%LOCALAPPDATA%\memdebug` and a scheduled task named `memdebug-watch` that runs
+- `memdebug autostart install --apply` creates a launcher script `memdebug-watch.ps1` and its task definition `memdebug-watch.xml` in `%LOCALAPPDATA%\memdebug` and a scheduled task named `memdebug-watch` that runs
   it when you log in (your account only, no administrator rights; look for it in Task Scheduler). It runs in a hidden PowerShell window, which may flash briefly at login.
-  What it finds goes to `watch.log` in the same folder and to the viewer's Status page. `memdebug autostart remove --apply` stops the task and deletes both. Windows may
+  What it finds goes to `watch.log` in the same folder and to the viewer's Status page. `memdebug autostart remove --apply` stops the task and deletes all three. Windows may
   ask about running a script the first time if your execution policy is strict; the task starts PowerShell with `-ExecutionPolicy Bypass` for that one file only.

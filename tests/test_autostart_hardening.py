@@ -103,8 +103,8 @@ def test_the_unit_and_the_agent_start_in_the_data_folder_not_in_the_home_folder(
 def test_the_windows_launcher_lives_where_asked_not_beside_a_ledger_in_a_shared_folder(tmp_path):
     shared, mine = tmp_path / "shared-drive", tmp_path / "my-profile"
     p = au.make_plan("windows", ["x"], ["watch"], data_dir=shared, home=tmp_path, tools=TOOLS, launcher_dir=mine)
-    assert p.files[0][0] == mine / "memdebug-watch.ps1" and p.undo_remove == (mine / "memdebug-watch.ps1",)
-    assert str(mine / "memdebug-watch.ps1") in p.steps[0][-1]
+    assert p.files[0][0] == mine / "memdebug-watch.ps1" and p.undo_remove == (mine / "memdebug-watch.ps1", mine / "memdebug-watch.xml")
+    assert str(mine / "memdebug-watch.ps1") in p.files[1][1] and p.steps[0][5] == str(mine / "memdebug-watch.xml")
     assert au.make_plan("windows", ["x"], ["watch"], data_dir=shared, home=tmp_path, tools=TOOLS).files[0][0] == shared / "memdebug-watch.ps1"  # the default
 
 

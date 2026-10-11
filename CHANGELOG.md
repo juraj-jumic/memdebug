@@ -3,6 +3,14 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (from 1.0.0 the interfaces listed in [docs/stability.md](docs/stability.md) are stable).
 
+## [Unreleased]
+
+### Fixed
+- **`memdebug autostart install --apply` failed on Windows with "Access is denied".** The task was created with `schtasks /Create /SC ONLOGON`, which needs administrator rights, so the
+  promise of "no administrator rights" did not hold on a normal account (found the first time it was tried on a real PC; the recorded-command tests could not show it, and nothing was left
+  behind). The task is now created from a small XML definition (`memdebug-watch.xml` next to the launcher) with a logon trigger for your own account, run with ordinary rights, which
+  Windows allows without elevation. `remove` deletes the file too. A name that cannot be written now stops the setup with a message instead of an error.
+
 ## [1.0.0] - 2026-10-11
 
 Memdebug 1.0 is a promise of stability, not a claim that everything is finished: the commands, exit codes, reports, settings file, witness file and ledger described in

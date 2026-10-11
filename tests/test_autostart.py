@@ -40,18 +40,56 @@ class Recorder:
 # -- the plans ---------------------------------------------------------------------------------------------------------------------
 
 def test_the_windows_plan_is_a_launcher_script_and_a_per_user_logon_task_with_every_program_by_absolute_path(tmp_path):
-    p = plan("windows", ["C:\\Program Files\\Py thon\\python.exe", "-m", "memdebug"], tmp=tmp_path)
-    [(launcher, text)] = p.files
-    assert launcher == tmp_path / "data" / "memdebug-watch.ps1"
+    p = plan("windows", ["C:\\Program Files\\Py thon\\python.exe", "-m", "memdebug"], tmp=tmp_path, user="PC\\Me")
+    [(launcher, text), (task_file, xml)] = p.files
+    assert launcher == tmp_path / "data" / "memdebug-watch.ps1" and task_file == tmp_path / "data" / "memdebug-watch.xml"
     lines = text.splitlines()
     assert lines[1] == f"Set-Location -LiteralPath '{tmp_path / 'data'}'"  # starts in the data folder, where nothing can shadow a Python module
     assert lines[2] == "& 'C:\\Program Files\\Py thon\\python.exe' '-m' 'memdebug' 'watch' '--every' '60' '--no-bell' '--log' '/data/watch.log'"
     create, run_now = p.steps
-    assert create[0] == TOOLS["schtasks"] and create[1:4] == ("/Create", "/TN", "memdebug-watch") and "/RL" in create and "LIMITED" in create and "ONLOGON" in create
-    assert create[-1] == f'"{TOOLS["powershell"]}" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{launcher}"'
+    assert create == (TOOLS["schtasks"], "/Create", "/TN", "memdebug-watch", "/XML", str(task_file), "/F")
     assert run_now == (TOOLS["schtasks"], "/Run", "/TN", "memdebug-watch")
     assert all(step[0] == TOOLS["schtasks"] for step in (*p.steps, *p.undo_steps, p.query))
-    assert p.undo_remove == (launcher,) and not any("/RU" in step or "SYSTEM" in " ".join(step) for step in p.steps)  # never another account
+    assert p.undo_remove == (launcher, task_file)
+    assert not any("/RU" in step or "SYSTEM" in " ".join(step) or "ONLOGON" in step for step in p.steps)  # never another account; ONLOGON needs administrator rights
+
+
+def test_the_task_definition_is_for_the_named_user_with_ordinary_rights_and_runs_the_launcher_hidden(tmp_path):
+    import xml.etree.ElementTree as ET
+
+    p = plan("windows", ["C:\\Py\\python.exe"], tmp=tmp_path, user="PC\\Me & <Co>")
+    xml = p.files[1][1]
+    ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+    root = ET.fromstring(xml.split("?>", 1)[1])  # well formed even with a name that holds XML characters
+    assert root.findtext("t:Triggers/t:LogonTrigger/t:UserId", namespaces=ns) == "PC\\Me & <Co>"
+    assert root.findtext("t:Principals/t:Principal/t:UserId", namespaces=ns) == "PC\\Me & <Co>"
+    assert root.findtext("t:Principals/t:Principal/t:RunLevel", namespaces=ns) == "LeastPrivilege"
+    assert root.findtext("t:Principals/t:Principal/t:LogonType", namespaces=ns) == "InteractiveToken"
+    assert root.findtext("t:Actions/t:Exec/t:Command", namespaces=ns) == TOOLS["powershell"]
+    arguments = root.findtext("t:Actions/t:Exec/t:Arguments", namespaces=ns)
+    assert "-WindowStyle Hidden" in arguments and str(tmp_path / "data" / "memdebug-watch.ps1") in arguments
+    assert root.findtext("t:Settings/t:ExecutionTimeLimit", namespaces=ns) == "PT0S"  # a watcher is not cut off after the default three days
+
+
+def test_the_task_is_for_the_current_account_unless_told_otherwise(tmp_path, monkeypatch):
+    monkeypatch.setenv("USERDOMAIN", "WORKPC")
+    monkeypatch.setenv("USERNAME", "Alex")
+    assert au.current_user() == "WORKPC\\Alex"
+    assert "<UserId>WORKPC\\Alex</UserId>" in plan("windows", tmp=tmp_path).files[1][1]
+
+
+def test_a_task_definition_is_written_as_utf_16_and_read_back_exactly(tmp_path):
+    p = au.make_plan("windows", ["x"], ["watch"], data_dir=tmp_path, home=tmp_path, tools=TOOLS, user="PC\\Jos\u00e9")
+    au.install(p, Recorder())
+    raw = p.files[1][0].read_bytes()
+    assert raw[:2] in (b"\xff\xfe", b"\xfe\xff") and raw.decode("utf-16") == p.files[1][1] and "Jos\u00e9" in p.files[1][1]
+
+
+def test_a_name_that_cannot_be_written_stops_the_setup_with_a_message_and_leaves_nothing(tmp_path):
+    p = au.make_plan("windows", ["x\ud800"], ["watch"], data_dir=tmp_path, home=tmp_path, tools=TOOLS, user="PC\\Me")
+    with pytest.raises(au.AutostartError, match="cannot be written"):
+        au.install(p, Recorder())
+    assert not list(tmp_path.iterdir())
 
 
 def test_an_apostrophe_in_a_windows_path_cannot_break_out_of_the_script_quoting(tmp_path):

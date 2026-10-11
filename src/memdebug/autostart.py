@@ -10,6 +10,7 @@ writes only the files listed and runs only the commands listed (never through a 
 """
 from __future__ import annotations
 
+import getpass
 import os
 import plistlib
 import re
@@ -19,6 +20,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from .errors import MemdebugError
 
@@ -111,8 +113,37 @@ def default_tools(system: str) -> dict[str, str]:
     return {"systemctl": "/usr/bin/systemctl", "launchctl": "/bin/launchctl"}
 
 
+def current_user() -> str:
+    """The Windows account the task is for: the domain (the computer's name for a local account), a backslash, and the user name."""
+    name = os.environ.get("USERNAME") or getpass.getuser()
+    domain = os.environ.get("USERDOMAIN")
+    return f"{domain}\\{name}" if domain else name
+
+
+def _task_xml(user: str, program: str, arguments: str) -> str:
+    """The scheduled task as XML.
+
+    A logon trigger for a named user, run as that user with ordinary rights, can be created without administrator rights; `schtasks /Create /SC ONLOGON`
+    cannot (it answers "Access is denied", found when 1.0.0 was first tried on a real PC).
+    """
+    who, exe, args = escape(user), escape(program), escape(arguments)
+    return (
+        '<?xml version="1.0" encoding="UTF-16"?>\r\n'
+        '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\r\n'
+        "  <RegistrationInfo><Description>memdebug watch: record changes to an AI agent's memory. Undo with 'memdebug autostart remove'.</Description></RegistrationInfo>\r\n"
+        f"  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{who}</UserId></LogonTrigger></Triggers>\r\n"
+        f'  <Principals><Principal id="Author"><UserId>{who}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>\r\n'
+        "  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"
+        "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable>"
+        "<AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden><ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"
+        "<RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure></Settings>\r\n"
+        f'  <Actions Context="Author"><Exec><Command>{exe}</Command><Arguments>{args}</Arguments></Exec></Actions>\r\n'
+        "</Task>\r\n")
+
+
 def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir: Path, home: Path, uid: int = 0,
-              config_home: Path | None = None, tools: dict[str, str] | None = None, launcher_dir: Path | None = None) -> Plan:
+              config_home: Path | None = None, tools: dict[str, str] | None = None, launcher_dir: Path | None = None,
+              user: str | None = None) -> Plan:
     """The plan for a system.
 
     Args:
@@ -124,6 +155,7 @@ def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir
         uid: The numeric user id (macOS launchctl needs it).
         config_home: Linux only: the configuration folder (`$XDG_CONFIG_HOME`, default `~/.config`).
         tools: The absolute paths of the system programs to run (see `default_tools`).
+        user: Windows only: the account the task is for (domain, backslash, name); the current account when omitted.
         launcher_dir: Windows only: where the launcher script is kept. It runs at every login, so it belongs in a folder only the person can write
             (the default memdebug data folder under their profile), whatever folder the ledger is in; `data_dir` when omitted.
 
@@ -138,16 +170,19 @@ def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir
         text = ("# Started at login by 'memdebug autostart install'. Undo with 'memdebug autostart remove'.\r\n"
                 f"Set-Location -LiteralPath {_powershell_quote(str(data_dir))}\r\n"
                 "& " + " ".join(_powershell_quote(part) for part in full) + "\r\n")
-        run_line = f'"{tool["powershell"]}" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{launcher}"'
+        who = user or current_user()
+        _refuse_control_characters(who)
+        task_file = launcher.with_suffix(".xml")
+        arguments_line = f'-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{launcher}"'
         return Plan(
             "windows",
             (f"Create a small launcher script: {launcher}",
-             f"Create a Windows scheduled task named {SERVICE} that runs it when you log in (your account only, no administrator rights).",
+             f"Create a Windows scheduled task named {SERVICE} from {task_file.name} that runs it when {who} logs in (your account only, no administrator rights).",
              "Start it now. It runs in a hidden window; what it finds goes to the log file and the viewer's Status page.",),
-            ((launcher, text),),
-            ((tool["schtasks"], "/Create", "/TN", SERVICE, "/SC", "ONLOGON", "/RL", "LIMITED", "/F", "/TR", run_line), (tool["schtasks"], "/Run", "/TN", SERVICE)),
+            ((launcher, text), (task_file, _task_xml(who, tool["powershell"], arguments_line))),
+            ((tool["schtasks"], "/Create", "/TN", SERVICE, "/XML", str(task_file), "/F"), (tool["schtasks"], "/Run", "/TN", SERVICE)),
             ((tool["schtasks"], "/End", "/TN", SERVICE), (tool["schtasks"], "/Delete", "/TN", SERVICE, "/F")),
-            (launcher,),
+            (launcher, task_file),
             (tool["schtasks"], "/Query", "/TN", SERVICE))
     if system == "linux":
         unit = (config_home or home / ".config") / "systemd" / "user" / f"{SERVICE}.service"
@@ -205,10 +240,16 @@ def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not _plain_file(path):
         raise AutostartError(f"{path.name} exists and is not a plain file, so it was not touched")
+    # Windows PowerShell 5.1 reads a script without a byte order mark in the ANSI code page, which turns a name such as "José" into something else;
+    # a task definition is UTF-16, the form Task Scheduler itself writes and the one its XML declaration here names
+    encoding = {".ps1": "utf-8-sig", ".xml": "utf-16"}.get(path.suffix.lower(), "utf-8")
+    try:
+        data = text.encode(encoding)
+    except UnicodeEncodeError as exc:
+        raise AutostartError(f"{path.name} holds a character that cannot be written, so nothing was set up") from exc
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    # Windows PowerShell 5.1 reads a script without a byte order mark in the ANSI code page, which turns a name such as "José" into something else
-    with os.fdopen(fd, "w", encoding="utf-8-sig" if path.suffix.lower() == ".ps1" else "utf-8", newline="") as handle:
-        handle.write(text)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
 
 
 def _unlink(path: Path) -> None:
