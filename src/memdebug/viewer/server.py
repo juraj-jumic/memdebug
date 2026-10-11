@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from .. import laststatus
 from ..agents import scan_agents
 from ..errors import LedgerError, SnapshotError
 from ..ledger import Ledger, VerifyResult
@@ -90,6 +91,7 @@ _ROUTES = [
     ("snapshot", re.compile(r"^/snapshot/(s[1-9][0-9]{0,8})\Z")),
     ("diff", re.compile(r"^/diff\Z")),
     ("agents", re.compile(r"^/agents\Z")),
+    ("status", re.compile(r"^/status\Z")),
     ("integrity", re.compile(r"^/integrity\Z")),
     ("style", re.compile(r"^/style\.css\Z")),
     ("theme", re.compile(r"^/theme\Z")),
@@ -397,6 +399,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return self._send(303, b"", "text/plain; charset=utf-8", (("Location", target),))
         if name == "agents":  # looks at the home folder, not the ledger, so it works while the ledger is busy
             return self._page(pages.agents_page(self.ctx, scan_agents()))
+        if name == "status":  # reads the record of the latest check, not the ledger
+            checked, problem = self._latest_check(state)
+            return self._page(pages.status_page(self.ctx, checked, problem, datetime.now(timezone.utc)))
         op = trust = None
         if name == "timeline":
             op = (query.get("op") or [None])[0]
@@ -437,7 +442,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def _render(self, name: str, ledger: Ledger, state: ViewerState, **p: Any) -> pages.Page:
         ctx = self.ctx
         if name == "overview":
-            return pages.overview(ledger, ctx)
+            return pages.overview(ledger, ctx, self._latest_check(state)[0])
         if name == "timeline":
             return pages.timeline(ledger, ctx, op=p["op"], trust=p["trust"], before=p["before"], event_id=p["event"])
         if name == "snapshots":
@@ -447,6 +452,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if name == "diff":
             return pages.diff_page(ledger, ctx, p["old"], p["new"], p["full"])
         return self._integrity(ledger, state)
+
+    @staticmethod
+    def _latest_check(state: ViewerState) -> tuple[laststatus.StoredCheck | None, str | None]:
+        """The record of the latest check next to the ledger, and a short reason if it exists but cannot be used. Never raises."""
+        try:
+            return laststatus.read(laststatus.status_path(state.ledger_path)), None
+        except laststatus.StatusError as exc:
+            return None, str(exc)
 
     def _integrity(self, ledger: Ledger, state: ViewerState) -> pages.Page:
         with state.verify_lock:  # one full check at a time; a recent result is reused

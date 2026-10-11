@@ -102,8 +102,10 @@ def test_a_program_that_waits_when_double_clicked_passes_and_is_not_left_running
     assert load().main(make_program(tmp_path)) == 0
     assert "stays open, as it should" in capsys.readouterr().out
     # only python.exe and cmd.exe: the powershell running this query has the same words in its own command line
+    # matched on this test's own folder: other tests running at the same moment (parallel workers) start stand-ins of their own
     listing = subprocess.run(
         ["powershell", "-NoProfile", "-Command",
-         "(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*stub.py*' -and $_.Name -in 'python.exe','cmd.exe' } | Measure-Object).Count"],
+         f"(Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{tmp_path}*stub.py*' -and $_.Name -in 'python.exe','cmd.exe' }} "
+         "| Measure-Object).Count"],
         capture_output=True, text=True).stdout.strip()
     assert listing == "0", f"{listing} stand-in process(es) were left running"  # the check stops the program and the process it started

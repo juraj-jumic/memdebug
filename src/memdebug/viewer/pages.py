@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
+from .. import laststatus
 from ..agents import CLOUD_NOTE, FoundAgent
 from ..backends import HISTORYLESS, is_opaque_id, short_id
 from ..describe import describe_event, rollback_details
@@ -41,7 +42,7 @@ FILTERS = [  # (label, op, trust)
     ("Outside the history", "EXTERNAL", None), ("Snapshots", "SNAPSHOT", None), ("Rollbacks", "ROLLBACK", None),
     ("Untrusted source", None, "untrusted"),
 ]
-NAV = [("overview", "Overview", "/"), ("timeline", "Timeline", "/timeline"), ("snapshots", "Snapshots", "/snapshots"),
+NAV = [("overview", "Overview", "/"), ("status", "Status", "/status"), ("timeline", "Timeline", "/timeline"), ("snapshots", "Snapshots", "/snapshots"),
        ("compare", "Compare", "/diff"), ("agents", "Agents", "/agents"), ("integrity", "Integrity", "/integrity")]
 
 
@@ -346,11 +347,80 @@ def _putback_tip(shown: list[LedgerEntry], snaps: dict) -> list[Markup]:
             el("pre", block(command))]
 
 
-def overview(ledger: Ledger, ctx: Context) -> Page:
+STATE_LABEL = {"quiet": "quiet", "changes": "changes recorded", "attention": "CHANGED OUTSIDE ITS HISTORY",
+               "incomplete": "NOT READ IN FULL", "error": "COULD NOT BE CHECKED"}
+STALE_AFTER_SECONDS = 24 * 3600
+
+
+def age_text(then: datetime, now: datetime) -> str:
+    """How long before `now` the time `then` was, in words."""
+    seconds = max(0, int((now - then).total_seconds()))
+    for limit, unit, size in ((90, "second", 1), (5400, "minute", 60), (172800, "hour", 3600)):
+        if seconds < limit:
+            count = max(1, seconds // size)
+            return f"{count} {unit}{'' if count == 1 else 's'} ago"
+    return f"{seconds // 86400} days ago"
+
+
+def _needs_a_look_banner(status: laststatus.StoredCheck) -> Markup | None:
+    """A warning for the front page when the latest check did not see everything or found something, with a link to the Status page."""
+    problems = [s for s in status.stores if s.state in ("attention", "incomplete", "error")]
+    if status.ledger_ok and not problems:
+        return None
+    what = []
+    if not status.ledger_ok:
+        what.append("the ledger failed its integrity check")
+    what += [f"{s.name}: {STATE_LABEL[s.state]}" for s in problems[:4]]  # escaped once, below
+    if len(problems) > 4:
+        what.append(f"and {len(problems) - 4} more")
+    return el("div", "The latest check says: ", inline("; ".join(what), 300), ". ", el("a", "See the Status page", href="/status"),
+              class_="notice bad", role="status")
+
+
+def status_page(ctx: Context, status: laststatus.StoredCheck | None, problem: str | None, now: datetime) -> Page:
+    """What the latest `memdebug check` or `memdebug watch` saw, store by store.
+
+    This page does not look at any store. It shows the record those commands leave next to the ledger (see laststatus.py), says
+    when it was written, and says plainly when there is none, when it cannot be used, and when it is old.
+    """
+    parts: list[Markup] = [
+        el("h1", "Status"),
+        el("p", "What the latest 'memdebug check' or 'memdebug watch' saw. This page cannot look at your stores itself: it shows the record "
+                "those commands leave next to the ledger.", class_="sub"),
+    ]
+    if problem:
+        parts.append(notice(f"{problem}. Run 'memdebug check' to write a new one.", "bad"))
+        return Page(200, document(ctx, "Status", "status", Markup("".join(str(p) for p in parts))))
+    if status is None:
+        parts += [notice("No check has been recorded yet."), el("p", "Run this in a terminal, or keep 'memdebug watch' running:", class_="why"),
+                  el("pre", block("memdebug check"))]
+        return Page(200, document(ctx, "Status", "status", Markup("".join(str(p) for p in parts))))
+    banner = _needs_a_look_banner(status)
+    parts.append(banner if banner is not None else notice("The latest check found nothing that needs a look.", "ok"))
+    parts.append(el("p", f"Checked {stamp(status.checked_at)} ({age_text(status.checked_at, now)}).", class_="sub"))
+    if (now - status.checked_at).total_seconds() > STALE_AFTER_SECONDS:
+        parts.append(notice("This record is old. Run 'memdebug check' (or keep 'memdebug watch' running) for a current one."))
+    if not status.ledger_ok:
+        parts.append(notice("The ledger failed its integrity check: " + (status.ledger_problem or "see the Integrity page") + ".", "bad"))
+    for store in status.stores:
+        count = f"{store.memories} memories" if store.memories is not None else "memory count unknown"
+        flagged = store.state in ("attention", "incomplete", "error")
+        parts.append(el(
+            "section",
+            el("h2", inline(store.name, 40), " ", el("small", "(", inline(store.kind, 20), f", {count})")),
+            el("p", el("span", STATE_LABEL.get(store.state, "unknown"), class_="flag" if flagged else "badge"), " ", inline(store.headline, 400)),
+            *([el("ul", *[el("li", inline(line, 400)) for line in store.lines])] if store.lines else []),
+            class_="agent"))
+    if status.note:
+        parts.append(el("p", inline(status.note, 300), class_="sub"))
+    return Page(200, document(ctx, "Status", "status", Markup("".join(str(p) for p in parts))))
+
+
+def overview(ledger: Ledger, ctx: Context, status: laststatus.StoredCheck | None = None) -> Page:
     """The front page: a verdict, entries that need a look, recent entries, snapshots and the ledger head.
 
-    Reads the ledger only. The verdict counts changes outside the store's history and memories from an untrusted
-    source.
+    Reads the ledger, and the record of the latest check if there is one (a warning at the top when that check did not see everything).
+    The verdict counts changes outside the store's history and memories from an untrusted source.
     """
     counts = ledger.counts()
     external = counts["by_op"].get("EXTERNAL", 0)
@@ -380,6 +450,9 @@ def overview(ledger: Ledger, ctx: Context) -> Page:
         else:
             summary += " Every change went through the store's own history."
     parts: list[Markup] = [el("h1", headline, class_="headline"), el("p", summary, class_="sub")]
+    banner = _needs_a_look_banner(status) if status is not None else None
+    if banner is not None:
+        parts.append(banner)
 
     flagged: dict[int, LedgerEntry] = {}
     for op, trust in (("EXTERNAL", None), (None, "untrusted")):

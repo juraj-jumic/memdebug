@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import laststatus
 from .backends import friendly_id
 from .errors import MemdebugError
 from .hints import Hint, new_hints, scan
@@ -44,6 +45,7 @@ class StoreResult:
         provenance: For some flagged notes, one line about which logged agent session wrote it (see provenance.py).
         sources: For added or edited memories of a store that describes where a write came from (Open WebUI: its own label and the timing of chats), that
             description in words. Evidence, never proof.
+        memory_count: How many memories the store held at this look, or None if it could not be listed.
         incomplete: True if the pass did not see the whole store: some notes could not be read, or the history was too long to read in full.
         history_partial: True if the store's history was only partly read (a git store beyond the row or text limit). Then changes made outside git
             are not checked at all, and the newest history is the part that is missing.
@@ -58,6 +60,7 @@ class StoreResult:
     previews: dict[str, str] = field(default_factory=dict)  # the start of what each changed memory says, to label opaque ids
     provenance: dict[str, str] = field(default_factory=dict)  # which logged agent session wrote a flagged note, in words (see provenance.py)
     sources: dict[str, str] = field(default_factory=dict)  # what the store itself says about where a write came from, in words
+    memory_count: int | None = None
     incomplete: bool = False
     history_partial: bool = False
 
@@ -227,6 +230,7 @@ def check_store(store: StoreConfig, ledger: Ledger, *, settle: float = 1.0) -> S
     result.outside_history = report.external_events
     result.history_partial = report.reconcile_skipped
     result.incomplete = result.history_partial or (report.live is not None and not report.live.complete)
+    result.memory_count = len(report.live.memories) if report.live is not None else None
     entries = ledger.entries()
     for entry in entries[before:]:
         event = entry.event
@@ -273,7 +277,32 @@ def check_all(registry: Registry, ledger: Ledger, *, settle: float = 1.0, ledger
                 summary.witness_warning = SAME_DISK_WARNING
         except WitnessError as exc:
             summary.witness_note = f"the witness could not be updated: {safe_text(exc, 200)}"
+    if ledger_path is not None:  # for the viewer; a failure to write it never stops a check
+        laststatus.write(laststatus.status_path(ledger_path), check_record(summary, datetime.now(timezone.utc)))
     return summary
+
+
+def store_state(result: StoreResult) -> str:
+    """One word for how a store's pass went: error, attention (a change outside its history), incomplete, changes or quiet."""
+    if result.error:
+        return "error"
+    if result.attention:
+        return "attention"
+    if result.incomplete:
+        return "incomplete"
+    return "changes" if result.changes else "quiet"
+
+
+def check_record(summary: CheckSummary, now: datetime) -> dict:
+    """The latest check as the plain data `laststatus.write` saves for the viewer: the same words `check` printed, one entry per store."""
+    stores = []
+    for result in summary.results:
+        details = [line.strip() for line in [*hint_lines(result), *provenance_lines(result), *source_lines(result)]]
+        stores.append({"name": safe_text(result.store.name, 40), "kind": safe_text(result.store.kind, 20), "state": store_state(result),
+                       "headline": describe(result).strip(), "lines": details[:laststatus.MAX_LINES], "memories": result.memory_count})
+    return {"version": laststatus.VERSION, "checked_at": now.astimezone(timezone.utc).isoformat(), "ledger_ok": summary.ledger_ok,
+            "ledger_problem": summary.ledger_problems[0] if summary.ledger_problems else None, "stores": stores[:laststatus.MAX_STORES],
+            "note": summary.witness_note}
 
 
 def summary_lines(summary: CheckSummary) -> list[str]:

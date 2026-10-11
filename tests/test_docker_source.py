@@ -354,7 +354,7 @@ def test_no_validator_accepts_a_trailing_line_break():
         (vs._NEXT_VALUE.match, "e1"), (vs._NEXT_TEXT.match, "/timeline?event=e1"),
         (pv._UUID.match, "11111111-1111-4111-8111-111111111111"), (pv._TIME.match, "2026-10-07T18:29:03.104Z"),
         *[(vs._ID_RE[name].match, good) for name, good in (("event", "e1"), ("snapshot", "s1"), ("number", "5"), ("page", "2"), ("flag", "1"))],
-        *[(rx.match, path) for (name, rx), path in zip(vs._ROUTES, ["/", "/timeline", "/event/e1", "/snapshots", "/snapshot/s1", "/diff", "/agents", "/integrity", "/style.css", "/theme"], strict=True)],
+        *[(rx.match, path) for (name, rx), path in zip(vs._ROUTES, ["/", "/timeline", "/event/e1", "/snapshots", "/snapshot/s1", "/diff", "/agents", "/status", "/integrity", "/style.css", "/theme"], strict=True)],
     ]
     for check, good in cases:
         assert check(good), good
