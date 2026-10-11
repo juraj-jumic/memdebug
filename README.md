@@ -81,6 +81,7 @@ anything it could not prove. Treat the ledger as sensitive: it contains your age
 * [docs/rollback.md](docs/rollback.md): what a rollback guarantees, for plain folders and for git notes.
 * [docs/how-it-works.md](docs/how-it-works.md): the design, how the pieces fit, and how the project is tested and released.
 * [docs/agents.md](docs/agents.md): which agents it knows and where each keeps its memory. [docs/windows.md](docs/windows.md): Windows notes.
+* [docs/open-webui-tools.md](docs/open-webui-tools.md): why an Open WebUI model may never save a memory, and an example router that fixes it.
 * [docs/threat-model.md](docs/threat-model.md): what is defended, against whom, and the known limits.
 * [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [docs/releasing.md](docs/releasing.md).
 * [SECURITY.md](SECURITY.md): how to report a problem. [CONTRIBUTING.md](CONTRIBUTING.md): how to help.

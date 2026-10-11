@@ -5,10 +5,19 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## [Unreleased]
 
+### Added
+- **`memdebug check` and `watch` now say where an Open WebUI write came from.** Until now that evidence (the app's own `created_by` label and how close a chat
+  message was) was shown only in the viewer. For each added or edited memory, up to three are listed under the summary line ("where it came from: ... created_by=agent,
+  type=user; ... a chat was active at the time"), with a line counting any more and a reminder that it is evidence, not proof. The text is cleaned for display like
+  everything else memdebug shows. Other kinds of store describe no source and print nothing new.
+
 ### Documented
 - **Open WebUI: a memory the model saves itself looks like one added by hand.** Tried on a real installation: a memory saved by the model through Open WebUI's
   native `add_memory` tool carries the same `created_by: manual` label as one added in Settings, and in a Temporary Chat the timing line says "consistent with being
   added by hand". The label and the timing cannot separate the two (docs/agents.md, docs/threat-model.md). `memdebug watch` still records every add, edit and removal.
+- **Why an Open WebUI model may never save a memory, and an example router that fixes it** ([docs/open-webui-tools.md](docs/open-webui-tools.md)). A router (Pipe) function
+  that rebuilds the request to Ollama drops the `tools` list, so the model can only pretend to save. The page describes what was seen and what was tried, and
+  [docs/examples/open-webui-smart-router.py](docs/examples/open-webui-smart-router.py) is a router that forwards the tools. It is an example, not part of memdebug, and CI does not run it.
 
 ### Fixed
 - **A git store with a very long history is no longer called quiet.** memdebug reads at most 100,000 file changes of a git store's history, and at most
