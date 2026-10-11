@@ -183,6 +183,7 @@ def test_a_store_not_read_in_full_is_shown_loudly_on_the_status_page_and_the_fro
     saved(tmp, fresh(stores=stores))
     page = viewer.get("/status")[2]
     assert "NOT READ IN FULL" in page and "The latest check says" in page and "where it came from: x" in page
+    assert "See the Status page" not in page  # no link to itself
     front = viewer.get("/")[2]
     assert "The latest check says" in front and "webui: NOT READ IN FULL" in front and 'href="/status"' in front
 

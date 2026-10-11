@@ -362,8 +362,8 @@ def age_text(then: datetime, now: datetime) -> str:
     return f"{seconds // 86400} days ago"
 
 
-def _needs_a_look_banner(status: laststatus.StoredCheck) -> Markup | None:
-    """A warning for the front page when the latest check did not see everything or found something, with a link to the Status page."""
+def _needs_a_look_banner(status: laststatus.StoredCheck, *, link: bool = True) -> Markup | None:
+    """A warning for when the latest check did not see everything or found something, with a link to the Status page unless this is that page."""
     problems = [s for s in status.stores if s.state in ("attention", "incomplete", "error")]
     if status.ledger_ok and not problems:
         return None
@@ -373,7 +373,7 @@ def _needs_a_look_banner(status: laststatus.StoredCheck) -> Markup | None:
     what += [f"{s.name}: {STATE_LABEL[s.state]}" for s in problems[:4]]  # escaped once, below
     if len(problems) > 4:
         what.append(f"and {len(problems) - 4} more")
-    return el("div", "The latest check says: ", inline("; ".join(what), 300), ". ", el("a", "See the Status page", href="/status"),
+    return el("div", "The latest check says: ", inline("; ".join(what), 300), ". ", *([el("a", "See the Status page", href="/status")] if link else []),
               class_="notice bad", role="status")
 
 
@@ -395,7 +395,7 @@ def status_page(ctx: Context, status: laststatus.StoredCheck | None, problem: st
         parts += [notice("No check has been recorded yet."), el("p", "Run this in a terminal, or keep 'memdebug watch' running:", class_="why"),
                   el("pre", block("memdebug check"))]
         return Page(200, document(ctx, "Status", "status", Markup("".join(str(p) for p in parts))))
-    banner = _needs_a_look_banner(status)
+    banner = _needs_a_look_banner(status, link=False)
     parts.append(banner if banner is not None else notice("The latest check found nothing that needs a look.", "ok"))
     parts.append(el("p", f"Checked {stamp(status.checked_at)} ({age_text(status.checked_at, now)}).", class_="sub"))
     if (now - status.checked_at).total_seconds() > STALE_AFTER_SECONDS:
