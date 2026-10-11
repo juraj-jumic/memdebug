@@ -32,7 +32,8 @@ KIND_NAMES = {"markdown": "markdown notes in a git repository", "folder": "a fol
 MAX_SETTINGS_BYTES = 1_000_000
 MAX_STORES = 200
 _NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,39}\Z")
-_OPTIONS = ("subdir", "user_id", "agent_id", "run_id", "docker", "files")
+_OPTIONS = ("subdir", "user_id", "agent_id", "run_id", "docker", "files", "suffix")
+SUFFIXES = (".md", ".txt")  # the file endings a folder store can watch (markdown by default; Goose keeps its memory in .txt files)
 
 
 class SettingsError(MemdebugError):
@@ -53,6 +54,7 @@ class StoreConfig:
         run_id: Mem0 only: the run to read.
         docker: Open WebUI only: the container its database is copied from, before every look.
         files: Folder only: watch just these files in it (comma-separated names), nothing else in the folder.
+        suffix: Folder only: the file ending to watch, ".md" (the default when None) or ".txt".
     """
 
     name: str
@@ -64,6 +66,7 @@ class StoreConfig:
     run_id: str | None = None
     docker: str | None = None  # Open WebUI only: the container its database is copied from, before every look
     files: str | None = None  # folder only: watch just these files in it (comma-separated names), nothing else in the folder
+    suffix: str | None = None  # folder only: ".md" (default) or ".txt"
 
     def describe(self) -> str:
         """The store's name followed by its kind in words, for showing to the person."""
@@ -144,10 +147,13 @@ def validate_store(data: object) -> StoreConfig:
     options = {key: (None if data.get(key) is None else _text(data[key], key, limit=256)) for key in _OPTIONS}
     if kind == "mem0" and options["user_id"] is None:
         raise SettingsError(f"the Mem0 store {name} needs a user id")
+    if options["suffix"] is not None and (kind != "folder" or options["suffix"] not in SUFFIXES):
+        raise SettingsError(f"{safe_text(name, 40)}: 'suffix' must be .md or .txt, and only for a folder store")
     if options["files"] is not None:
         names = options["files"].split(",")
-        if kind != "folder" or len(names) > 10 or any("/" in n or _valid_relpath(n, (".md",)) is None for n in names):
-            raise SettingsError(f"{safe_text(name, 40)}: 'files' must be 1 to 10 plain markdown file names, for a folder store")
+        ending = options["suffix"] or ".md"
+        if kind != "folder" or len(names) > 10 or any("/" in n or _valid_relpath(n, (ending,)) is None for n in names):
+            raise SettingsError(f"{safe_text(name, 40)}: 'files' must be 1 to 10 plain {ending} file names, for a folder store")
     if options["docker"] is not None and (kind != "openwebui" or not valid_container(options["docker"])):
         raise SettingsError(f"{safe_text(name, 40)}: a container can only be named for an Open WebUI store, with a plain container name")
     return StoreConfig(name=name, kind=kind, path=_text(data["path"], "path"), **options)
@@ -234,7 +240,8 @@ def open_store(cfg: StoreConfig, *, refresh: bool = True) -> OpenedStore:
         adapter = MarkdownGitAdapter(cfg.path, store=cfg.name, subdir=cfg.subdir)
         return OpenedStore(adapter, {"store": adapter.store})
     if cfg.kind == "folder":
-        folder = FolderAdapter(cfg.path, store=cfg.name, subdir=cfg.subdir, only=tuple(cfg.files.split(",")) if cfg.files else None)
+        folder = FolderAdapter(cfg.path, store=cfg.name, subdir=cfg.subdir, suffixes=(cfg.suffix or ".md",),
+                               only=tuple(cfg.files.split(",")) if cfg.files else None)
         return OpenedStore(folder, {"store": folder.store})
     if cfg.kind == "openwebui":
         webui = OpenWebUIAdapter(cfg.path, user_id=cfg.user_id)
@@ -283,6 +290,7 @@ class Candidate:
         why: A short description of what it is, shown to the person.
         docker: For Open WebUI in Docker, the name of the container.
         files: For a folder, the only files in it that should be watched.
+        suffix: For a folder, the file ending to watch when it is not the default ".md".
     """
 
     kind: str
@@ -291,15 +299,27 @@ class Candidate:
     why: str
     docker: str | None = None
     files: tuple[str, ...] | None = None
+    suffix: str | None = None
 
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
-def discover(home: Path | None = None) -> list[Candidate]:
-    """Stores that are probably on this computer. Looks only at folder names and for markdown files, never inside them."""
-    base = (home or Path.home()) / ".claude" / "projects"
+def discover_children(base: Path, inside: tuple[str, ...], *, prefix: str, why: str, suffix: str = ".md", limit: int = 50) -> list[Candidate]:
+    """Memory folders kept one per project (or per agent) under `base`: each child folder's `inside` subfolder, if it holds notes.
+
+    Looks only at folder names and the names of the files in them, never inside a file. Links, junctions and unsafe names are skipped,
+    and at most 300 children are looked at and `limit` offered.
+
+    Args:
+        base: The folder whose children are the per-project folders.
+        inside: The path inside each child where the notes are (empty if the child itself holds them).
+        prefix: What the suggested store names start with.
+        why: The description shown to the person.
+        suffix: The file ending that counts as a note.
+        limit: The most stores to offer.
+    """
     found: list[Candidate] = []
     taken: set[str] = set()
     try:
@@ -310,24 +330,29 @@ def discover(home: Path | None = None) -> list[Candidate]:
         try:
             if not entry.is_dir(follow_symlinks=False) or has_unsafe_chars(entry.name):
                 continue
-            memory = base / entry.name / "memory"  # the ordinary form: it is what gets stored and shown
+            memory = base / entry.name / Path(*inside)  # the ordinary form: it is what gets stored and shown
             info = longpath.lstat(memory)
             if stat.S_ISLNK(info.st_mode) or _is_reparse_point(info) or not stat.S_ISDIR(info.st_mode):
                 continue
             names = longpath.listdir(memory)[:2000]
         except OSError:
             continue
-        if not any(n.lower().endswith(".md") for n in names):
+        if not any(n.lower().endswith(suffix) for n in names):
             continue
-        slug = "claude-" + (_slug(entry.name)[-24:].strip("-") or "project")
+        slug = prefix + (_slug(entry.name)[-24:].strip("-") or "project")
         name, n = slug[:40], 2
         while name in taken:
             name, n = f"{slug[:36]}-{n}", n + 1
         taken.add(name)
-        found.append(Candidate("folder", name, memory, "Claude Code's memory notes for one project"))
-        if len(found) >= 50:
+        found.append(Candidate("folder", name, memory, why, suffix=suffix if suffix != ".md" else None))
+        if len(found) >= limit:
             break
     return found
+
+
+def discover(home: Path | None = None) -> list[Candidate]:
+    """Claude Code's per-project memory folders that are probably on this computer. Looks only at folder names and for markdown files."""
+    return discover_children((home or Path.home()) / ".claude" / "projects", ("memory",), prefix="claude-", why="Claude Code's memory notes for one project")
 
 
 def discover_docker(copies_dir: Path, docker: Docker | None = None) -> list[Candidate]:

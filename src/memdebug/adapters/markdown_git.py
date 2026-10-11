@@ -28,6 +28,7 @@ import re
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 from contextlib import ExitStack, contextmanager
@@ -193,7 +194,7 @@ class _Run:
         if self.proc.returncode is not None:
             return
         try:
-            if os.name == "posix":
+            if sys.platform != "win32":  # sys.platform, not os.name: the type checker only understands this form
                 os.killpg(self.proc.pid, signal.SIGKILL)
             else:
                 # taskkill /T ends the whole tree. Called by absolute path, never via PATH.

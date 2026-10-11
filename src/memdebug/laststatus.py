@@ -139,7 +139,7 @@ def read(path: Path) -> StoredCheck | None:
         if not isinstance(raw, dict):
             raise StatusError("the record of the latest check has an unexpected shape")
         state = raw.get("state")
-        lines = raw.get("lines") if isinstance(raw.get("lines"), list) else []
+        lines: list = raw["lines"] if isinstance(raw.get("lines"), list) else []
         count = raw.get("memories")
         stores.append(StoredStore(
             name=_text(raw.get("name"), 40), kind=_text(raw.get("kind"), 20), state=state if state in STATES else "error",

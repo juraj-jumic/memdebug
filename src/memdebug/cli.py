@@ -8,7 +8,7 @@ import functools
 import os
 import re
 import tempfile
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NoReturn, Optional, ParamSpec, TypeVar, cast
@@ -48,6 +48,7 @@ from .stores import (
     open_store,
     save_registry,
     valid_name,
+    validate_store,
 )
 from .sync import sync
 from .textsafe import console_safe, safe_text
@@ -842,19 +843,21 @@ def _copies_dir(db: Optional[Path]) -> Path:
 
 
 def _register(registry: Registry, path: Path, *, name: Optional[str], kind: Optional[str], user_id: Optional[str], agent_id: Optional[str],
-              run_id: Optional[str], subdir: Optional[str], docker: Optional[str] = None, files: Optional[str] = None) -> StoreConfig:
+              run_id: Optional[str], subdir: Optional[str], docker: Optional[str] = None, files: Optional[str] = None,
+              suffix: Optional[str] = None) -> StoreConfig:
     """Check that a store can be opened, then add it to the registry (not yet saved)."""
     resolved = longpath.resolve(path.expanduser())
     chosen_kind = kind or detect_kind(resolved)
     if chosen_kind not in KINDS:
         raise MemdebugError("the type must be one of: " + ", ".join(KINDS))
-    same = next((s for s in registry.stores if (s.path == str(resolved) or (docker and s.docker == docker)) and s.subdir == subdir and (user_id is None or s.user_id == user_id) and s.files == files), None)
+    same = next((s for s in registry.stores if (s.path == str(resolved) or (docker and s.docker == docker)) and s.subdir == subdir and (user_id is None or s.user_id == user_id) and s.files == files and s.suffix == suffix), None)
     if same is not None:
         raise MemdebugError(f"that is already watched as {safe_text(same.name, 40)}")
     chosen_name = name or _guess_name(resolved, {s.name for s in registry.stores})
     if not valid_name(chosen_name):
         raise MemdebugError("a store name must be 1 to 40 lowercase letters, digits, dots, dashes or underscores")
-    cfg = StoreConfig(name=chosen_name, kind=chosen_kind, path=str(resolved), subdir=subdir, user_id=user_id, agent_id=agent_id, run_id=run_id, docker=docker, files=files)
+    cfg = StoreConfig(name=chosen_name, kind=chosen_kind, path=str(resolved), subdir=subdir, user_id=user_id, agent_id=agent_id, run_id=run_id, docker=docker, files=files, suffix=suffix)
+    cfg = validate_store(asdict(cfg))  # the same checks the settings file gets when it is read back: a bad value must not be saved
     opened = open_store(cfg)  # fails clearly if this is not something memdebug can read
     if cfg.kind == "openwebui" and cfg.user_id is None and isinstance(opened.adapter, OpenWebUIAdapter):
         # Whose memories to read is worked out once, now, and remembered: re-deriving it on every look would break a store that
@@ -888,6 +891,7 @@ def add_command(
     run_id: Optional[str] = typer.Option(None, "--run-id", help="Mem0 only."),
     subdir: Optional[str] = typer.Option(None, "--subdir", help="Only read this folder inside it."),
     files: Optional[str] = typer.Option(None, "--files", help="A folder store only: watch just these markdown files in it (comma-separated), nothing else in the folder."),
+    suffix: Optional[str] = typer.Option(None, "--suffix", help="A folder store only: the file ending to watch, .md (the default) or .txt (for example Goose's memory)."),
     baseline_now: bool = typer.Option(True, "--baseline/--no-baseline", help="Save a first snapshot right away (recommended)."),
     db: Path = DB_OPTION,
 ) -> None:
@@ -905,7 +909,7 @@ def add_command(
         path = _copies_dir(db) / name / "webui.db"
     elif path is None:
         raise MemdebugError("say what to watch: a path, or --docker NAME for Open WebUI in Docker")
-    cfg = _register(registry, path, name=name, kind=kind, user_id=user_id, agent_id=agent_id, run_id=run_id, subdir=subdir, docker=docker, files=files)
+    cfg = _register(registry, path, name=name, kind=kind, user_id=user_id, agent_id=agent_id, run_id=run_id, subdir=subdir, docker=docker, files=files, suffix=suffix)
     save_registry(registry, config)
     echo(f"Added {safe_text(cfg.name, 40)}: {KIND_NAMES[cfg.kind]}.")
     if baseline_now:
@@ -1040,7 +1044,7 @@ def setup_command(
         if yes or typer.confirm("  Watch it?", default=True):
             try:
                 added.append(_register(registry, c.path, name=c.name, kind=c.kind, user_id=None, agent_id=None, run_id=None, subdir=None, docker=c.docker,
-                                       files=",".join(c.files) if c.files else None))
+                                       files=",".join(c.files) if c.files else None, suffix=c.suffix))
             except MemdebugError as exc:
                 echo(f"  Could not set that up: {safe_text(exc, 200)}")
     if not found:
