@@ -1167,6 +1167,8 @@ def autostart_remove(
     echo("This would stop the background watcher and remove what 'memdebug autostart install' created:")
     for path in plan.undo_remove:
         echo(f"  - {safe_text(path, 300)}")
+    if plan.system == "windows":
+        echo("  - stop a watcher that is still running from it (ending the task does not always stop it)")
     if not apply:
         echo("\nNothing has been changed. Add --apply to do this.")
         return

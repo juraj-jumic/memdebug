@@ -141,6 +141,22 @@ def _task_xml(user: str, program: str, arguments: str) -> str:
         "</Task>\r\n")
 
 
+def _stop_leftover(powershell: str, words: list[str]) -> tuple[tuple[str, ...], ...]:
+    """The step that stops a watcher the task left running.
+
+    Ending a Windows task stops only its launcher, not the watcher it started (found when `remove` was first tried on a real PC: two watchers kept
+    running on a ledger whose task was gone). The step stops only a process whose command line holds this watcher's own log file after `--log`,
+    the word memdebug and the word watch, and never itself. Nothing is stopped when the plan has no log file to recognise it by.
+    """
+    if "--log" not in words or words.index("--log") + 1 >= len(words):
+        return ()
+    log = words[words.index("--log") + 1]
+    script = (f"$log = {_powershell_quote(log)}; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine "
+              "-and $_.CommandLine.Contains('--log') -and $_.CommandLine.Contains($log) -and $_.CommandLine.Contains('memdebug') "
+              "-and $_.CommandLine.Contains(' watch ') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+    return ((powershell, "-NoProfile", "-NonInteractive", "-Command", script),)
+
+
 def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir: Path, home: Path, uid: int = 0,
               config_home: Path | None = None, tools: dict[str, str] | None = None, launcher_dir: Path | None = None,
               user: str | None = None) -> Plan:
@@ -181,7 +197,7 @@ def make_plan(system: str, command: list[str], arguments: list[str], *, data_dir
              "Start it now. It runs in a hidden window; what it finds goes to the log file and the viewer's Status page.",),
             ((launcher, text), (task_file, _task_xml(who, tool["powershell"], arguments_line))),
             ((tool["schtasks"], "/Create", "/TN", SERVICE, "/XML", str(task_file), "/F"), (tool["schtasks"], "/Run", "/TN", SERVICE)),
-            ((tool["schtasks"], "/End", "/TN", SERVICE), (tool["schtasks"], "/Delete", "/TN", SERVICE, "/F")),
+            ((tool["schtasks"], "/End", "/TN", SERVICE), (tool["schtasks"], "/Delete", "/TN", SERVICE, "/F"), *_stop_leftover(tool["powershell"], full)),
             (launcher, task_file),
             (tool["schtasks"], "/Query", "/TN", SERVICE))
     if system == "linux":

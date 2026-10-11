@@ -49,7 +49,7 @@ def test_the_windows_plan_is_a_launcher_script_and_a_per_user_logon_task_with_ev
     create, run_now = p.steps
     assert create == (TOOLS["schtasks"], "/Create", "/TN", "memdebug-watch", "/XML", str(task_file), "/F")
     assert run_now == (TOOLS["schtasks"], "/Run", "/TN", "memdebug-watch")
-    assert all(step[0] == TOOLS["schtasks"] for step in (*p.steps, *p.undo_steps, p.query))
+    assert all(step[0] in (TOOLS["schtasks"], TOOLS["powershell"]) for step in (*p.steps, *p.undo_steps, p.query))  # absolute paths, never found through PATH
     assert p.undo_remove == (launcher, task_file)
     assert not any("/RU" in step or "SYSTEM" in " ".join(step) or "ONLOGON" in step for step in p.steps)  # never another account; ONLOGON needs administrator rights
 
@@ -326,3 +326,46 @@ def test_the_service_always_names_the_ledger_even_when_it_is_the_default_one(tmp
     text = (home / ".config" / "systemd" / "user" / "memdebug-watch.service").read_text(encoding="utf-8")
     default_ledger = (data / "memdebug" / "ledger.db").resolve()
     assert '"--db" ' + au._systemd_quote(str(default_ledger)) in text
+
+
+# -- a watcher the task did not take down with it (found the first time `remove` was tried on a real PC) ------------------------------
+
+def test_removing_on_windows_also_stops_a_watcher_that_the_task_left_running(tmp_path):
+    p = plan("windows", tmp=tmp_path, args=["watch", "--log", "C:\\Users\\Me\\it's\\watch.log"])
+    ended, deleted, stopper = p.undo_steps
+    assert ended[1:3] == ("/End", "/TN") and deleted[1:3] == ("/Delete", "/TN")
+    assert stopper[:4] == (TOOLS["powershell"], "-NoProfile", "-NonInteractive", "-Command")  # by absolute path, no shell
+    script = stopper[4]
+    assert "'C:\\Users\\Me\\it''s\\watch.log'" in script  # the log path, quoted so an apostrophe cannot break out
+    assert "$_.ProcessId -ne $PID" in script and "Contains('memdebug')" in script and "Contains(' watch ')" in script and "Contains('--log')" in script
+
+
+def test_nothing_is_stopped_when_there_is_no_log_file_to_recognise_the_watcher_by(tmp_path):
+    for args in (["watch"], ["watch", "--log"]):
+        assert len(plan("windows", tmp=tmp_path, args=args).undo_steps) == 2
+
+
+@pytest.mark.skipif(os.name != "nt", reason="uses Windows PowerShell and process command lines")
+def test_the_stop_step_ends_only_the_watcher_with_that_log_file_and_not_itself(tmp_path):
+    import subprocess
+    import time
+
+    powershell = au.default_tools("windows")["powershell"]
+    mine, other = tmp_path / "mine.log", tmp_path / "other.log"
+    sleeper = "import time; time.sleep(120)"
+
+    def start(*words):
+        return subprocess.Popen([sys.executable, "-c", sleeper, *words], creationflags=0x08000000)  # CREATE_NO_WINDOW
+
+    watcher = start("memdebug", "watch", "--every", "60", "--log", str(mine))
+    neighbour = start("memdebug", "watch", "--every", "60", "--log", str(other))  # another watcher, another log
+    reader = start("notepad", str(mine))  # something that merely mentions the log file
+    try:
+        time.sleep(1.5)
+        plan_ = au.make_plan("windows", ["x"], ["watch", "--log", str(mine)], data_dir=tmp_path, home=tmp_path, tools={"schtasks": "unused", "powershell": powershell})
+        code, _ = au.default_run(plan_.undo_steps[2])
+        time.sleep(1.5)
+        assert code == 0 and watcher.poll() is not None and neighbour.poll() is None and reader.poll() is None
+    finally:
+        for process in (watcher, neighbour, reader):
+            process.kill()

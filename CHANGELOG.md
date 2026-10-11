@@ -10,6 +10,9 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   promise of "no administrator rights" did not hold on a normal account (found the first time it was tried on a real PC; the recorded-command tests could not show it, and nothing was left
   behind). The task is now created from a small XML definition (`memdebug-watch.xml` next to the launcher) with a logon trigger for your own account, run with ordinary rights, which
   Windows allows without elevation. `remove` deletes the file too. A name that cannot be written now stops the setup with a message instead of an error.
+- **`memdebug autostart remove` left the watcher running on Windows.** Ending the task stops only its launcher, so the watcher kept running on a ledger whose task was gone (found the
+  first time `remove` was tried on a real PC). `remove` now also stops a process whose command line holds the watcher's own log file after `--log`, the word memdebug and the word
+  watch, and never anything else (tested with real processes: a watcher with another log file and a program that merely mentions the log are left alone).
 
 ## [1.0.0] - 2026-10-11
 
