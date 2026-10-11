@@ -201,7 +201,7 @@ def document(ctx: Context, title: str, active: str, content: Markup) -> str:
     ], class_="theme", role="group", aria_label="Colour theme")
     top = el("header", el("span", "memdebug", class_="brand"), el("span", inline(ctx.ledger_name, 60), class_="where"),
              el("span", "Read-only, times in UTC", class_="ro"), tabs, switch, class_="top")
-    foot = el("footer", "This page only reads the ledger. It cannot change a memory store or the ledger.")
+    foot = el("footer", "This page only reads (the ledger, and on the Status page the record of the latest check). It cannot change a memory store or the ledger.")
     body = el("body", top, el("main", content), foot)
     theme_class = f"theme-{ctx.theme}" if ctx.theme in ("light", "dark") else None
     return str(raw_doctype()) + str(el("html", head, body, lang="en", class_=theme_class))
@@ -433,6 +433,8 @@ def overview(ledger: Ledger, ctx: Context, status: laststatus.StoredCheck | None
         headline = f"{plural(external, 'change', 'changes')} happened outside the history."
     elif untrusted:
         headline = f"{plural(untrusted, 'memory', 'memories')} came from an untrusted source."
+    elif status is not None and status.needs_a_look:
+        headline = "The latest check needs a look."  # the ledger itself is quiet, but a store was not read in full, failed, or changed outside its history
     else:
         headline = "Nothing needs a look."
     summary = f"{plural(counts['events'], 'event', 'events')} and {plural(counts['snapshots'], 'snapshot', 'snapshots')} are on record."

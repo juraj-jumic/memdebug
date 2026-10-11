@@ -198,7 +198,24 @@ def test_a_failed_ledger_check_and_an_old_record_are_both_said_plainly(served):
 def test_a_quiet_record_adds_no_warning_to_the_front_page(served):
     viewer, tmp = served
     saved(tmp, fresh())
-    assert "The latest check says" not in viewer.get("/")[2]
+    front = viewer.get("/")[2]
+    assert "The latest check says" not in front and "The latest check needs a look" not in front
+
+
+def test_the_front_page_headline_never_says_nothing_needs_a_look_beside_a_warning(tmp_path):
+    from memdebug.ledger import Ledger
+    from memdebug.viewer import pages
+    quiet = Ledger(tmp_path / "q.db")
+    ctx = pages.Context(ledger_name="q.db")
+    unread = [{"name": "n", "kind": "folder", "state": "incomplete", "headline": "n: NOT READ IN FULL", "lines": [], "memories": 1}]
+    ok = ls.read(saved(tmp_path, record()))
+    needs = ls.read(saved(tmp_path, record(stores=unread)))
+    assert "Nothing is recorded yet" in pages.overview(quiet, ctx, needs).html  # an empty ledger keeps its own headline
+    from memdebug.models import MemoryEvent, Op
+    quiet.append(MemoryEvent(backend="folder", memory_id="a.md", op=Op.ADD, ts=NOW, scope={"store": "n"}, after="x"))
+    assert "Nothing needs a look." in pages.overview(quiet, ctx, ok).html
+    page = pages.overview(quiet, ctx, needs).html
+    assert "The latest check needs a look." in page and "Nothing needs a look." not in page and "NOT READ IN FULL" in page
 
 
 def test_a_broken_record_is_reported_without_breaking_the_pages(served):
