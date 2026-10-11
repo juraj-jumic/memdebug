@@ -254,10 +254,13 @@ def to_markdown(report: Report) -> str:
 
 # -- JSON -----------------------------------------------------------------------------------------------------------
 
+SCHEMA_VERSION = 1  # of the JSON report: new keys may appear in a minor release; a key removed or changed in meaning raises this number
+
+
 def to_dict(report: Report) -> dict:
     """The report as a JSON-serialisable dict, with an `attention` flag added."""
     return {
-        "tool": {"name": "memdebug", "version": report.tool_version}, "generated_at": report.generated_at, "ledger": report.ledger_name,
+        "schema_version": SCHEMA_VERSION, "tool": {"name": "memdebug", "version": report.tool_version}, "generated_at": report.generated_at, "ledger": report.ledger_name,
         "integrity": {"ok": report.integrity_ok, "problems": report.integrity_problems},
         "witness": None if report.witness is None else {"ok": report.witness.ok, "problems": [safe_text(p, 300) for p in report.witness.problems],
                                                         "lines": report.witness.lines, "unwitnessed": report.witness.unwitnessed},

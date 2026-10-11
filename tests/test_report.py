@@ -84,7 +84,7 @@ def test_long_text_is_cut_and_says_so(tmp_path):
 
 def test_json_has_the_documented_shape(tmp_path):
     data = json.loads(r.to_json(r.build_report(ledger_with(tmp_path / "j.db"), now=T)))
-    assert set(data) == {"tool", "generated_at", "ledger", "integrity", "witness", "counts", "attention", "truncated", "findings", "rollbacks", "snapshots"}
+    assert set(data) == {"schema_version", "tool", "generated_at", "ledger", "integrity", "witness", "counts", "attention", "truncated", "findings", "rollbacks", "snapshots"}
     assert data["attention"] is True and data["findings"][0]["rule"] == "outside-history" and data["witness"] is None
 
 
