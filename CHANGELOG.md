@@ -3,7 +3,7 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (alpha: anything may change before 1.0).
 
-## [Unreleased]
+## [0.6.2] - 2026-10-11
 
 ### Added
 - **`memdebug check` and `watch` now say where an Open WebUI write came from.** Until now that evidence (the app's own `created_by` label and how close a chat
