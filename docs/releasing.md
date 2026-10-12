@@ -10,6 +10,9 @@ What the repository already does, and the few steps only the owner can do (they 
   anywhere; PyPI trusts this one workflow in this one repository.
 * `dependabot.yml` proposes updates to the pinned actions and to dependencies every week.
 * A test (`tests/test_release_hygiene.py`) fails if the version, the changelog, the licence files or the links in the documentation drift apart.
+* A test (`tests/test_demo_recording.py`) fails if the README's recorded demo (`docs/demo.cast`, `docs/demo.gif`) no longer shows what `memdebug demo` prints. After
+  changing the demo, record it again on Linux with `python packaging/make_demo.py cast`, then draw the gif with `python packaging/make_demo.py gif` (needs Pillow and a
+  monospace font); the recording carries no version number, so a release alone never makes it stale.
 * The name `memdebug` was free on PyPI when last checked. Nothing is reserved until you publish: check again before you do.
 
 ## Once, before the first release

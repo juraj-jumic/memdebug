@@ -3,6 +3,13 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/)
 (from 1.0.0 the interfaces listed in [docs/stability.md](docs/stability.md) are stable).
 
+## [Unreleased]
+
+### Fixed
+- **The README's recorded demo was the one made for 0.3.0** (its caption said so, and the gif's title bar showed the version). It is recorded again from the current `memdebug demo`, with no
+  version number in it, and `tests/test_demo_recording.py` now fails when the recording no longer matches what the demo prints (ignoring the throwaway folder, git hashes and the backup
+  id) or when the gif was not drawn from it. `packaging/make_demo.py` records and draws both.
+
 ## [1.0.1] - 2026-10-11
 
 ### Fixed
