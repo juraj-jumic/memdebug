@@ -10,7 +10,7 @@ agents whose memory they can reach: notes in a folder or git repository, Open We
 
 ![memdebug demo: an edit that bypassed git is caught and undone without losing anything, and a tampered copy of the record is detected](docs/demo.gif)
 
-That is `memdebug demo` as released in 0.3.0, paced for reading (the real run takes about a second on Linux and a few seconds on Windows).
+That is the output of `memdebug demo`, paced for reading (the real run takes about a second on Linux and a few seconds on Windows).
 The unpaced recording is [`docs/demo.cast`](docs/demo.cast): `asciinema play docs/demo.cast`.
 
 An agent's memory is built from text it read at runtime, and text can be planted: an email, a web page, a document.
